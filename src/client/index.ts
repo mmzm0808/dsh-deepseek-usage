@@ -63,8 +63,8 @@ body:not([data-ds-dark-theme]) [data-${NS}] { --dsu-bg:#eef0f4; --dsu-panel:#fff
 .${NS}-amount{ font-size:30px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
 .${NS}-amount-sub{ color:var(--dsu-muted); font-size:13px; }
 .${NS}-r0{ padding:4px 10px; border-radius:999px; background:color-mix(in srgb, var(--dsu-gold) 12%, transparent); border:1px solid color-mix(in srgb, var(--dsu-gold) 35%, transparent); color:var(--dsu-gold); font-size:12px; font-weight:650; white-space:nowrap; }
-.${NS}-pv-badge{ padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600; white-space:nowrap; }
-.${NS}-pv-badge b{ font-weight:900; }
+.${NS}-pv-badge{ padding:3px 10px; border-radius:999px; font-size:12px; font-weight:500; white-space:nowrap; }
+.${NS}-pv-badge b{ font-weight:900; font-size:1.15em; }
 .${NS}-pv-badge.peak{ background:color-mix(in srgb, #ef4444 16%, transparent); border:1px solid color-mix(in srgb, #ef4444 45%, transparent); color:#dc2626; }
 .${NS}-pv-badge.valley{ background:color-mix(in srgb, #10b981 16%, transparent); border:1px solid color-mix(in srgb, #10b981 45%, transparent); color:#047857; }
 .${NS}-balance-detail{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
@@ -134,7 +134,8 @@ function toScientific(value: number): string {
 /** Return whether the current Beijing time is peak or valley. */
 function peakValley(): { text: '峰' | '谷'; cls: 'peak' | 'valley' } {
   const now = new Date()
-  const hour = Number(now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', hour12: false }))
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', hour: '2-digit', hour12: false }).formatToParts(now)
+  const hour = Number(parts.find(part => part.type === 'hour')?.value ?? 0)
   const peak = (hour >= 9 && hour < 12) || (hour >= 14 && hour < 18)
   return peak ? { text: '峰', cls: 'peak' } : { text: '谷', cls: 'valley' }
 }
