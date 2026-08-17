@@ -36,12 +36,16 @@ export interface PlatformToday {
 export interface PriceRatio {
   /** Whether any pre-cutoff historical data exists. */
   has_history: boolean
-  /** Historical average cost per token (before cutoff). */
-  a1: number | null
-  /** Current average cost per token (from cutoff onward). */
-  a2: number | null
-  /** A2 / A1. */
-  r0: number | null
+  /** Historical average cost per token (before cutoff), or the default when no history exists. */
+  a1: number
+  /** Average cost per token from cutoff onward (total). */
+  a2_total: number | null
+  /** Total multiplier since cutoff: a2_total / a1. */
+  r0_total: number | null
+  /** Average cost per token today. */
+  a2_today: number | null
+  /** Today's multiplier: a2_today / a1. */
+  r0_today: number | null
   /** Cutoff date used in the calculation. */
   cutoff: string
 }

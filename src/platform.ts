@@ -21,6 +21,9 @@ const HISTORY_START = gmt8Start('2026-08-01')
 const CUTOFF_DATE = '2026-08-17'
 const CUTOFF_START = gmt8Start(CUTOFF_DATE)
 
+/** Default historical average cost per token when no pre-cutoff data exists. */
+const DEFAULT_A1 = 0.00000005
+
 /** Common private-API headers. */
 function headers(token: string): Record<string, string> {
   return {
@@ -156,16 +159,27 @@ export function todayRange(): { start: number; end: number } {
   return { start, end: start + 86_400 }
 }
 
-/** Build the R0 multiplier from historical and current averages. */
-function buildPriceRatio(historicalTokens: number, historicalCost: number, currentTokens: number, currentCost: number): PriceRatio {
-  const a1 = historicalTokens > 0 ? historicalCost / historicalTokens : null
-  const a2 = currentTokens > 0 ? currentCost / currentTokens : null
-  const r0 = a1 !== null && a1 > 0 && a2 !== null ? a2 / a1 : null
+/** Build the R0 multipliers from historical, since-cutoff, and today averages. */
+function buildPriceRatio(
+  historicalTokens: number,
+  historicalCost: number,
+  totalTokens: number,
+  totalCost: number,
+  todayTokens: number,
+  todayCost: number,
+): PriceRatio {
+  const a1 = historicalTokens > 0 ? historicalCost / historicalTokens : DEFAULT_A1
+  const a2Total = totalTokens > 0 ? totalCost / totalTokens : null
+  const r0Total = a2Total !== null ? a2Total / a1 : null
+  const a2Today = todayTokens > 0 ? todayCost / todayTokens : null
+  const r0Today = a2Today !== null ? a2Today / a1 : null
   return {
     has_history: historicalTokens > 0 && historicalCost > 0,
     a1,
-    a2,
-    r0,
+    a2_total: a2Total,
+    r0_total: r0Total,
+    a2_today: a2Today,
+    r0_today: r0Today,
     cutoff: CUTOFF_DATE,
   }
 }
@@ -180,10 +194,12 @@ export async function fetchPlatformSnapshot(token: string): Promise<PlatformSnap
   const current = todayRange()
   const historyEnd = CUTOFF_START
 
-  const [summary, todayAmount, todayCost, historyAmount, historyCost] = await Promise.all([
+  const [summary, todayAmount, todayCost, sinceAmount, sinceCost, historyAmount, historyCost] = await Promise.all([
     getPlatform<UserSummary>('/api/v0/users/get_user_summary', token),
     getPlatform<AmountPayload>(`/api/v0/usage/by_api_key/amount?start=${current.start}&end=${current.end}&tz=${TZ_OFFSET_SECONDS}`, token),
     getPlatform<CostPayload>(`/api/v0/usage/by_api_key/cost?start=${current.start}&end=${current.end}&tz=${TZ_OFFSET_SECONDS}`, token),
+    getPlatform<AmountPayload>(`/api/v0/usage/by_api_key/amount?start=${CUTOFF_START}&end=${current.end}&tz=${TZ_OFFSET_SECONDS}`, token),
+    getPlatform<CostPayload>(`/api/v0/usage/by_api_key/cost?start=${CUTOFF_START}&end=${current.end}&tz=${TZ_OFFSET_SECONDS}`, token),
     getPlatform<AmountPayload>(`/api/v0/usage/by_api_key/amount?start=${HISTORY_START}&end=${historyEnd}&tz=${TZ_OFFSET_SECONDS}`, token),
     getPlatform<CostPayload>(`/api/v0/usage/by_api_key/cost?start=${HISTORY_START}&end=${historyEnd}&tz=${TZ_OFFSET_SECONDS}`, token),
   ])
@@ -198,6 +214,8 @@ export async function fetchPlatformSnapshot(token: string): Promise<PlatformSnap
 
   const currentAmount = aggregateAmount(todayAmount)
   const currentCost = aggregateCost(todayCost, currency)
+  const sinceAmountAgg = aggregateAmount(sinceAmount)
+  const sinceCostAgg = aggregateCost(sinceCost, currency)
   const historyAmountAgg = aggregateAmount(historyAmount)
   const historyCostAgg = aggregateCost(historyCost, currency)
 
@@ -223,6 +241,13 @@ export async function fetchPlatformSnapshot(token: string): Promise<PlatformSnap
       cost: currentCost.total,
       models,
     },
-    price_ratio: buildPriceRatio(historyAmountAgg.tokens, historyCostAgg.total, currentAmount.tokens, currentCost.total),
+    price_ratio: buildPriceRatio(
+      historyAmountAgg.tokens,
+      historyCostAgg.total,
+      sinceAmountAgg.tokens,
+      sinceCostAgg.total,
+      currentAmount.tokens,
+      currentCost.total,
+    ),
   }
 }
