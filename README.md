@@ -1,5 +1,7 @@
 # 📊 dsh-deepseek-usage
 
+[English](README_EN.md) | 中文
+
 ## DeepSeek API 用量监测插件 
 
 ### 【峰谷提示】【实时余额】【实际价格涨幅计算】
@@ -15,6 +17,10 @@
   <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="version" src="https://img.shields.io/badge/version-v0.1.0-blueviolet">
   <img alt="runtime" src="https://img.shields.io/badge/runtime-dsh%20web-4d6bfe">
+</p>
+
+<p align="center">
+  <img alt="Star History" src="https://api.star-history.com/svg?repos=mmzm0808/dsh-deepseek-usage&type=Date">
 </p>
 
 ## ✨ 特性
