@@ -1,0 +1,4 @@
+# dsh-deepseek-usage bundle layer
+- insert:
+    - id: dsh-deepseek-usage
+      name: dsh-deepseek-usage

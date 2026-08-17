@@ -1,0 +1,26 @@
+/**
+ * HTTP route family for dsh-deepseek-usage: read the current usage snapshot
+ * and force a balance refresh. All routes are loopback-only and `no-store`.
+ * @module dsh-deepseek-usage/routes
+ */
+import type { WebRoute } from '@deepseek-ai/dsh-host-webserver';
+import type { UsageState } from './protocol.js';
+/** Dependencies the routes need from the plugin host. */
+export interface UsageRoutesDeps {
+    /** Build the latest state snapshot. */
+    getState(): UsageState;
+    /** Force a balance refresh and return the resulting snapshot. */
+    refreshBalance(): Promise<UsageState>;
+    /** Open the platform login browser. */
+    startLogin(): Promise<{
+        ok: boolean;
+        message: string;
+    }>;
+    /** Check whether the platform login browser has produced a userToken. */
+    checkLogin(): Promise<{
+        loggedIn: boolean;
+        message?: string;
+    }>;
+}
+/** Build the route family. */
+export declare function makeUsageRoutes(deps: UsageRoutesDeps): WebRoute[];
