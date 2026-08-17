@@ -1,6 +1,8 @@
 # 📊 dsh-deepseek-usage
 
-**DeepSeek API 用量监测插件** —— 右侧悬浮球显示充值余额，点击展开面板展示开放平台真实余额、累计消费、今日消费、API 请求次数、Tokens、分模型今日用量，并实时计算 8 月 17 日后的实际涨价倍率 R0。
+# DeepSeek API 用量监测插件 
+##【峰谷提示】【实际价格涨幅计算】
+右侧悬浮球显示充值余额，点击展开面板展示开放平台真实余额、累计消费、今日消费、API 请求次数、Tokens、分模型今日用量，并实时计算 8 月 17 日后的**实际涨价倍率** R0。
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/mmzm0808/dsh-deepseek-usage/master/docs/preview-light.jpg" alt="浅色模式预览" width="45%">
