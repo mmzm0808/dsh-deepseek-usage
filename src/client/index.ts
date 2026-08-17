@@ -81,6 +81,8 @@ const CSS = `
 .${NS}-error{ color:var(--dsu-red); font-size:12px; margin-top:8px; }
 .${NS}-footer{ padding:12px 16px; border-top:1px solid var(--dsu-border); background:var(--dsu-panel-2); display:flex; align-items:center; justify-content:space-between; color:var(--dsu-muted); font-size:12px; }
 .${NS}-footer .refresh{ color:#8ea2ff; cursor:pointer; }
+.${NS}-tooltip{ position:fixed; z-index:2147483999; display:none; max-width:360px; padding:10px 14px; border-radius:10px; background:rgba(10,12,18,.96); border:1px solid rgba(255,255,255,.12); color:#fff; font-size:15px; line-height:1.5; white-space:normal; pointer-events:none; box-shadow:0 8px 24px rgba(0,0,0,.4); }
+.${NS}-tooltip.visible{ display:block; }
 @media (prefers-reduced-motion:reduce){ .${NS}-panel{ transition:none; } }
 `
 
@@ -211,6 +213,7 @@ export function apply(ctx: ClientContext): void {
         <span class="refresh" data-action="refresh">刷新</span>
       </div>
     </aside>
+    <div class="${NS}-tooltip" data-field="tooltip" role="tooltip"></div>
   `
   document.body.appendChild(host)
 
@@ -233,6 +236,7 @@ export function apply(ctx: ClientContext): void {
     modelCount: host.querySelector('[data-field="model-count"]') as HTMLElement,
     table: host.querySelector('[data-field="table"]') as HTMLElement,
     footer: host.querySelector('[data-field="footer"]') as HTMLElement,
+    tooltip: host.querySelector('[data-field="tooltip"]') as HTMLElement,
   }
 
   let open = false
@@ -309,6 +313,31 @@ export function apply(ctx: ClientContext): void {
     }
   }
 
+  const showTooltip = (target: HTMLElement, text: string): void => {
+    stateFields.tooltip.textContent = text
+    const rect = target.getBoundingClientRect()
+    stateFields.tooltip.style.left = `${Math.min(rect.left, window.innerWidth - 380)}px`
+    stateFields.tooltip.style.top = `${Math.max(8, rect.top - 46)}px`
+    stateFields.tooltip.classList.add('visible')
+  }
+
+  const hideTooltip = (): void => {
+    stateFields.tooltip.classList.remove('visible')
+  }
+
+  const bindTooltip = (el: HTMLElement): void => {
+    el.addEventListener('mouseenter', () => {
+      const tip = el.dataset.tip
+      if (tip) showTooltip(el, tip)
+    })
+    el.addEventListener('mouseleave', hideTooltip)
+    el.addEventListener('focus', () => {
+      const tip = el.dataset.tip
+      if (tip) showTooltip(el, tip)
+    })
+    el.addEventListener('blur', hideTooltip)
+  }
+
   const render = (state: UsageState): void => {
     if (state.error) {
       ballValue.textContent = '--'
@@ -347,7 +376,7 @@ export function apply(ctx: ClientContext): void {
         : modelData.r0_total !== null
           ? `累计R0 ×${modelData.r0_total.toFixed(2)}`
           : '累计R0 --'
-      stateFields.r0Total.title = modelData.has_history
+      stateFields.r0Total.dataset.tip = modelData.has_history
         ? `8月17日起累计 A2/A1 = ${modelData.a2_total !== null ? toScientific(modelData.a2_total) : '--'} / ${toScientific(modelData.a1)}`
         : `无涨价前历史，使用默认 A1 = ${toScientific(modelData.a1)}`
       stateFields.r0Today.textContent = !modelData.used_today
@@ -355,7 +384,7 @@ export function apply(ctx: ClientContext): void {
         : modelData.r0_today !== null
           ? `今日R0 ×${modelData.r0_today.toFixed(2)}`
           : '今日R0 --'
-      stateFields.r0Today.title = modelData.has_history
+      stateFields.r0Today.dataset.tip = modelData.has_history
         ? `今日 A2/A1 = ${modelData.a2_today !== null ? toScientific(modelData.a2_today) : '--'} / ${toScientific(modelData.a1)}`
         : `无涨价前历史，使用默认 A1 = ${toScientific(modelData.a1)}`
     } else {
@@ -366,6 +395,9 @@ export function apply(ctx: ClientContext): void {
     stateFields.ballR0.textContent = topModelData && topModelData.used_today && topModelData.r0_today !== null
       ? `${shortModelName(topModel ?? selectedModel)} ×${topModelData.r0_today.toFixed(2)}`
       : '--'
+    stateFields.ballR0.dataset.tip = topModelData && topModelData.r0_today !== null
+      ? `${shortModelName(topModel ?? selectedModel)} 今日 A2/A1 = ${toScientific(topModelData.a2_today ?? 0)} / ${toScientific(topModelData.a1)}`
+      : ''
 
     const today = state.today
     if (today) {
@@ -452,6 +484,9 @@ export function apply(ctx: ClientContext): void {
     selectedModel = stateFields.modelSelect.value
     if (lastState) render(lastState)
   })
+  bindTooltip(stateFields.r0Total)
+  bindTooltip(stateFields.r0Today)
+  bindTooltip(stateFields.ballR0)
   host.querySelector('[data-action="close"]')?.addEventListener('click', () => toggle(false))
   const onKeydown = (event: KeyboardEvent): void => {
     if (event.key === 'Escape' && open) toggle(false)
