@@ -1,20 +1,60 @@
-# dsh-deepseek-usage
+# 📊 dsh-deepseek-usage
 
-DeepSeek API 用量监测插件：右侧悬浮球显示充值余额，点击展开面板展示累计消费、今日消费、API 请求次数、Tokens 和分模型今日用量，并实时计算 8 月 17 日后的实际涨价倍率 R0（A2/A1）。
+**DeepSeek API 用量监测插件** —— 右侧悬浮球显示充值余额，点击展开面板展示开放平台真实余额、累计消费、今日消费、API 请求次数、Tokens、分模型今日用量，并实时计算 8 月 17 日后的实际涨价倍率 R0。
 
-![最新画面](docs/preview.jpg)
+<p align="center">
+  <img src="docs/preview.jpg" alt="DeepSeek API 用量监测预览" width="500">
+</p>
 
-## 数据来源
+<p align="center">
+  <img alt="license" src="https://img.shields.io/badge/license-MIT-blue">
+  <img alt="version" src="https://img.shields.io/badge/version-v0.1.0-blueviolet">
+  <img alt="runtime" src="https://img.shields.io/badge/runtime-dsh%20web-4d6bfe">
+</p>
 
-全部数据来自 DeepSeek 开放平台私有 API，与官方用量页同源：
+## ✨ 特性
 
-- `GET /api/v0/users/get_user_summary` — 充值余额、赠金余额、累计消费
-- `GET /api/v0/usage/by_api_key/amount` — 今日请求次数 / Tokens
-- `GET /api/v0/usage/by_api_key/cost` — 今日消费 / 分模型消费
+| 分类 | 说明 |
+|---|---|
+| 🟢 悬浮球 | 默认停靠右侧，可拖动上下移动，拖到左半边自动吸附左侧 |
+| 📋 用量面板 | 充值余额、赠金余额、累计消费、今日消费、API 请求次数、Tokens、分模型用量 |
+| 📈 R0 涨价倍率 | 实时计算 `A2 / A1`，其中 `A1` 为 8 月 17 日前每 Token 平均消费，`A2` 为 8 月 17 日起每 Token 平均消费 |
+| 🔐 登录机制 | 未配置 userToken 时，可打开本地 Edge 登录开放平台，自动读取并保存 userToken |
+| 🚪 退出登录 | 一键清除本机保存的 userToken，方便切换账号重新登录 |
+| 🖱️ 交互 | 点击面板外部自动收起；支持键盘 Esc 关闭；支持 reduced motion |
 
-**不使用本地价格表，不估算，不计算消费。**
+## 🚀 安装
 
-## 配置
+### Git 安装
+
+```sh
+dsh plugin --profile web add github:mmzm0808/dsh-deepseek-usage
+```
+
+### npm 安装
+
+```sh
+dsh plugin --profile web add dsh-deepseek-usage
+```
+
+### 本地开发安装
+
+```sh
+dsh plugin --profile web add "E:\ProgramData\deepseek-harness\DSH_Anything\dsh-deepseek-usage"
+```
+
+- 仓库已提交完整 `lib/` 构建产物，安装**无需执行构建脚本**（pnpm ≥10 的 allowBuilds 门禁不影响本插件）
+- 安装后**重启 dsh**（新 bundle 层在启动时加载）
+
+## 📖 使用
+
+1. **查看**：右侧悬浮球直接显示充值余额，点击展开用量面板
+2. **拖动**：按住悬浮球上下拖动；松手时根据位置自动吸附左侧或右侧
+3. **登录**：未登录时点击面板底部「登录」，在打开的 Edge 窗口中登录 DeepSeek 开放平台
+4. **退出登录**：点击面板底部「退出登录」，清除本机 userToken 后重新登录
+5. **收起**：点击面板外部任意位置、Esc 或面板右上角 ✕ 均可收起
+
+## 🔑 配置
 
 `userToken` 是平台 Web 登录态，只作为配置项，不写入插件源码/包内。
 
@@ -36,18 +76,22 @@ DEEPSEEK_PLATFORM_USER_TOKEN=你的 userToken
 
 也可以不手动配置：点击面板中的 **「登录」** 按钮，插件会打开本地 Edge 窗口让你登录 DeepSeek 开放平台，登录成功后自动读取并保存 `userToken`。
 
-## 路由
+## 🗂️ 数据与安全
 
-- `GET /api/deepseek-usage/state` — 当前余额 + 今日用量快照。
-- `POST /api/deepseek-usage/refresh` — 强制刷新。
+- 数据全部来自 DeepSeek 开放平台私有 API，与官方用量页同源，**不使用本地价格表，不估算消费**
+- `userToken` 只保存在本机用户配置中，不进入插件源码或 Git 仓库
+- API：`/api/deepseek-usage/state | refresh | login/start | login/status | logout`（**loopback-only**，仅本机可访问）
+- 响应统一 `Cache-Control: no-store`
 
-路由仅限 loopback，响应 `Cache-Control: no-store`。
-
-## 开发
+## 🛠️ 开发
 
 ```sh
 pnpm install
-pnpm build        # host tsc + client tsdown
+pnpm build      # host tsc + client tsdown
 pnpm typecheck
 pnpm verify
 ```
+
+## 📄 许可证
+
+MIT License · Copyright (c) 2026 mmzm0808
