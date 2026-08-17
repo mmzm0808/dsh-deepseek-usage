@@ -12,6 +12,7 @@ import { DeepSeekUsageSettingsCard } from './VentusSettingsCard.js'
 interface SlotsLike {
   inject(key: string, callback: () => () => void): () => void
   register(options: { name: string; id: string; order?: number }, component: unknown): () => void
+  snapshot(root?: string): unknown
 }
 
 /** Minimal client context shape this plugin uses. */
@@ -138,6 +139,15 @@ function peakValley(): { text: '峰' | '谷'; cls: 'peak' | 'valley' } {
   const hour = Number(parts.find(part => part.type === 'hour')?.value ?? 0)
   const peak = (hour >= 9 && hour < 12) || (hour >= 14 && hour < 18)
   return peak ? { text: '峰', cls: 'peak' } : { text: '谷', cls: 'valley' }
+}
+
+/** Check whether a slot name exists in a live slot snapshot. */
+function containsSlot(node: unknown, name: string): boolean {
+  if (Array.isArray(node)) return node.some(item => containsSlot(item, name))
+  if (typeof node !== 'object' || node === null) return false
+  const record = node as { name?: unknown; children?: unknown }
+  if (record.name === name) return true
+  return containsSlot(record.children, name)
 }
 
 /** Mount the floating widget. */
@@ -549,14 +559,26 @@ export function apply(ctx: ClientContext): void {
     order: 20,
   }, DeepSeekUsageSettingsCard))
 
+  let disposeFallbackCard: (() => void) | undefined
+  const fallbackTimer = setTimeout(() => {
+    if (containsSlot(ctx.slots.snapshot(), 'ventus.plugin.item')) return
+    disposeFallbackCard = ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
+      name: 'settings.plugin.item',
+      id: 'dsh-deepseek-usage',
+      order: 90,
+    }, DeepSeekUsageSettingsCard))
+  }, 800)
+
   void load()
   const timer = setInterval(() => { void load() }, POLL_MS)
 
   ctx.effect(() => () => {
     clearInterval(timer)
     clearInterval(loginPollTimer)
+    clearTimeout(fallbackTimer)
     disposeOverlay()
     disposeVentusCard()
+    disposeFallbackCard?.()
     document.removeEventListener('keydown', onKeydown)
     document.removeEventListener('click', onDocumentClick)
     host.remove()

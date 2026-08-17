@@ -12,6 +12,7 @@ interface SlotsLike {
         id: string;
         order?: number;
     }, component: unknown): () => void;
+    snapshot(root?: string): unknown;
 }
 /** Minimal client context shape this plugin uses. */
 interface ClientContext {
