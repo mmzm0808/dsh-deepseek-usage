@@ -21,6 +21,11 @@ export interface UsageRoutesDeps {
         loggedIn: boolean;
         message?: string;
     }>;
+    /** Clear stored userToken and reset to logged-out state. */
+    logout(): {
+        ok: boolean;
+        message?: string;
+    };
 }
 /** Build the route family. */
 export declare function makeUsageRoutes(deps: UsageRoutesDeps): WebRoute[];

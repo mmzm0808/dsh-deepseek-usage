@@ -171,6 +171,7 @@ export function apply(ctx: ClientContext): void {
       <div class="${NS}-footer">
         <span data-field="footer">等待数据</span>
         <span class="refresh" data-action="login">登录</span>
+        <span class="refresh" data-action="logout">退出登录</span>
         <span class="refresh" data-action="refresh">刷新</span>
       </div>
     </aside>
@@ -253,6 +254,17 @@ export function apply(ctx: ClientContext): void {
       }, 2000)
     } catch {
       stateFields.footer.textContent = '无法启动登录窗口'
+    }
+  }
+
+  const logout = async (): Promise<void> => {
+    try {
+      const response = await fetch('/api/deepseek-usage/logout', { method: 'POST' })
+      const result = await response.json() as { ok?: boolean; message?: string }
+      stateFields.footer.textContent = result.ok ? '已退出登录' : (result.message ?? '退出失败')
+      if (result.ok) await load()
+    } catch {
+      stateFields.footer.textContent = '退出失败'
     }
   }
 
@@ -370,6 +382,7 @@ export function apply(ctx: ClientContext): void {
     }
   })
   host.querySelector('[data-action="login"]')?.addEventListener('click', () => void startLogin())
+  host.querySelector('[data-action="logout"]')?.addEventListener('click', () => void logout())
   host.querySelectorAll('[data-action="refresh"]').forEach(el => el.addEventListener('click', () => void refresh()))
   host.querySelector('[data-action="close"]')?.addEventListener('click', () => toggle(false))
   const onKeydown = (event: KeyboardEvent): void => {

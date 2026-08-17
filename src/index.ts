@@ -9,7 +9,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
 import {
-  closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeFileSync,
+  closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -98,6 +98,19 @@ function resolveUserToken(config: Config): string | undefined {
     || readTokenFromConfigFile()
 }
 
+/** Remove stored userToken from the plugin config file and web profile patch. */
+function clearStoredToken(): void {
+  const configFile = pluginConfigPath()
+  if (existsSync(configFile)) rmSync(configFile, { force: true })
+
+  const home = process.env.DSH_HOME ?? join(homedir(), '.dsh')
+  const patchFile = join(home, 'profiles', 'web', 'cordis.patch.yml')
+  if (!existsSync(patchFile)) return
+  const text = readFileSync(patchFile, 'utf8')
+  const cleaned = text.replace(/# dsh-deepseek-usage[\s\S]*?platformUserToken:\s*'[^']*'\n?/, '')
+  if (cleaned !== text) writeFileSync(patchFile, cleaned)
+}
+
 /** Register the plugin. */
 export function apply(ctx: AppContext, config: Config): void {
   const token = resolveUserToken(config)
@@ -125,6 +138,17 @@ export function apply(ctx: AppContext, config: Config): void {
       }
     }
     return snapshot
+  }
+
+  const logout = (): { ok: boolean; message?: string } => {
+    try {
+      clearStoredToken()
+      closePlatformLogin()
+      snapshot = { balance: null, today: null, price_ratio: null, error: '未登录 DeepSeek 开放平台，请点击面板中的“登录”按钮', fetched_at: new Date().toISOString() }
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) }
+    }
   }
 
   const startLogin = async (): Promise<{ ok: boolean; message: string }> => {
@@ -160,6 +184,7 @@ export function apply(ctx: AppContext, config: Config): void {
         refreshBalance: refresh,
         startLogin,
         checkLogin,
+        logout,
       }).map(route => ctx.webServer.register(route))
       return () => { for (const dispose of routeDisposers) dispose() }
     },

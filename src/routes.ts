@@ -18,6 +18,8 @@ export interface UsageRoutesDeps {
   startLogin(): Promise<{ ok: boolean; message: string }>
   /** Check whether the platform login browser has produced a userToken. */
   checkLogin(): Promise<{ loggedIn: boolean; message?: string }>
+  /** Clear stored userToken and reset to logged-out state. */
+  logout(): { ok: boolean; message?: string }
 }
 
 /** Cap on JSON request bodies. */
@@ -111,5 +113,14 @@ export function makeUsageRoutes(deps: UsageRoutesDeps): WebRoute[] {
     },
   }
 
-  return [state, refresh, loginStart, loginStatus]
+  const logout: WebRoute = {
+    kind: 'exact',
+    path: '/api/deepseek-usage/logout',
+    handler: (req, res) => {
+      if (!guard(req, res, 'POST')) return
+      writeJson(res, 200, deps.logout())
+    },
+  }
+
+  return [state, refresh, loginStart, loginStatus, logout]
 }
