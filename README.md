@@ -2,7 +2,7 @@
 
 DeepSeek API 用量监测插件：右侧悬浮球显示充值余额，点击展开面板展示累计消费、今日消费、API 请求次数、Tokens 和分模型今日用量。
 
-![预览](docs/preview.png)
+![最新画面](docs/screenshot.png)
 
 ## 数据来源
 
