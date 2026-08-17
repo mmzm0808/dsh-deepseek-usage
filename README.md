@@ -34,7 +34,7 @@ dsh plugin --profile web add github:mmzm0808/dsh-deepseek-usage
 ### 本地开发安装
 
 ```sh
-dsh plugin --profile web add "E:\ProgramData\deepseek-harness\DSH_Anything\dsh-deepseek-usage"
+dsh plugin --profile web add "<本仓库本地绝对路径>"
 ```
 
 - 仓库已提交完整 `lib/` 构建产物，安装**无需执行构建脚本**（pnpm ≥10 的 allowBuilds 门禁不影响本插件）
