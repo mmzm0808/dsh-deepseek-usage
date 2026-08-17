@@ -28,10 +28,24 @@ export interface PlatformToday {
     cost: number;
     models: PlatformModelUsage[];
 }
+/** Real-time price multiplier vs historical average. */
+export interface PriceRatio {
+    /** Whether any pre-cutoff historical data exists. */
+    has_history: boolean;
+    /** Historical average cost per token (before cutoff). */
+    a1: number | null;
+    /** Current average cost per token (from cutoff onward). */
+    a2: number | null;
+    /** A2 / A1. */
+    r0: number | null;
+    /** Cutoff date used in the calculation. */
+    cutoff: string;
+}
 /** Full snapshot served by `/api/deepseek-usage/state`. */
 export interface PlatformSnapshot {
     balance: PlatformBalance | null;
     today: PlatformToday | null;
+    price_ratio: PriceRatio | null;
     error?: string;
     fetched_at: string;
 }

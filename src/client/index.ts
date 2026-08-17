@@ -53,6 +53,7 @@ const CSS = `
 .${NS}-balance-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; font-size:12px; color:var(--dsu-muted); }
 .${NS}-amount{ font-size:30px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
 .${NS}-amount-sub{ color:var(--dsu-muted); font-size:13px; margin-left:6px; }
+.${NS}-r0{ margin-left:auto; padding:4px 10px; border-radius:999px; background:rgba(255,209,102,.12); border:1px solid rgba(255,209,102,.35); color:#ffd166; font-size:12px; font-weight:650; white-space:nowrap; }
 .${NS}-balance-detail{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
 .${NS}-balance-detail .item{ background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.05); border-radius:10px; padding:8px 10px; }
 .${NS}-balance-detail .k{ font-size:12px; color:var(--dsu-muted); margin-bottom:2px; }
@@ -127,6 +128,7 @@ export function apply(ctx: ClientContext): void {
               <span data-field="source">--</span>
             </div>
             <span class="${NS}-amount">--</span><span class="${NS}-amount-sub"></span>
+            <span class="${NS}-r0" data-field="r0" title="实时涨价倍率 R0 = A2 / A1">--</span>
             <div class="${NS}-balance-detail">
               <div class="item"><div class="k">赠金余额</div><div class="v" data-field="bonus">--</div></div>
               <div class="item"><div class="k">累计消费</div><div class="v" data-field="total-cost">--</div></div>
@@ -182,6 +184,7 @@ export function apply(ctx: ClientContext): void {
     source: host.querySelector('[data-field="source"]') as HTMLElement,
     amount: host.querySelector(`.${NS}-amount`) as HTMLElement,
     amountSub: host.querySelector(`.${NS}-amount-sub`) as HTMLElement,
+    r0: host.querySelector('[data-field="r0"]') as HTMLElement,
     bonus: host.querySelector('[data-field="bonus"]') as HTMLElement,
     totalCost: host.querySelector('[data-field="total-cost"]') as HTMLElement,
     cost: host.querySelector('[data-field="cost"]') as HTMLElement,
@@ -280,6 +283,15 @@ export function apply(ctx: ClientContext): void {
       stateFields.totalCost.textContent = '--'
     }
 
+    const ratio = state.price_ratio
+    if (ratio && ratio.has_history && ratio.r0 !== null) {
+      stateFields.r0.textContent = `R0 ×${ratio.r0.toFixed(2)}`
+      stateFields.r0.title = `实时涨价倍率 R0 = A2/A1 = ${ratio.a2?.toFixed(8)} / ${ratio.a1?.toFixed(8)}`
+    } else {
+      stateFields.r0.textContent = 'R0 暂无历史'
+      stateFields.r0.title = '需要 8 月 17 日前的历史用量数据才能计算 R0'
+    }
+
     const today = state.today
     if (today) {
       stateFields.cost.textContent = money(today.cost, currency)
@@ -364,6 +376,12 @@ export function apply(ctx: ClientContext): void {
     if (event.key === 'Escape' && open) toggle(false)
   }
   document.addEventListener('keydown', onKeydown)
+  const onDocumentClick = (event: MouseEvent): void => {
+    if (!open) return
+    const target = event.target as Node
+    if (!panel.contains(target) && !ball.contains(target)) toggle(false)
+  }
+  document.addEventListener('click', onDocumentClick)
 
   const disposeOverlay = ctx.slots.inject('shell.overlay', () => ctx.slots.register({
     name: 'shell.overlay',
@@ -385,6 +403,7 @@ export function apply(ctx: ClientContext): void {
     disposeOverlay()
     disposeVentusCard()
     document.removeEventListener('keydown', onKeydown)
+    document.removeEventListener('click', onDocumentClick)
     host.remove()
     styleEl?.remove()
   }, 'dsh-deepseek-usage: ui')

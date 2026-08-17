@@ -12,8 +12,8 @@ export declare function todayRange(): {
     end: number;
 };
 /**
- * Fetch exact balance, cumulative cost, and today's usage/cost from the
- * DeepSeek Platform private API.
+ * Fetch exact balance, cumulative cost, today's usage/cost, and the R0 price
+ * multiplier from the DeepSeek Platform private API.
  * @param token - platform web `userToken`.
  * @returns a fully platform-sourced snapshot.
  */

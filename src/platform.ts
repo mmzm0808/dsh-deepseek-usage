@@ -6,10 +6,20 @@
  * @module dsh-deepseek-usage/platform
  */
 
-import type { PlatformSnapshot } from './protocol.js'
+import type { PlatformSnapshot, PriceRatio } from './protocol.js'
 
 const BASE = 'https://platform.deepseek.com'
 const TZ_OFFSET_SECONDS = 28_800
+
+/** GMT+8 midnight second timestamp for a date string. */
+function gmt8Start(date: string): number {
+  return Math.floor(new Date(`${date}T00:00:00+08:00`).getTime() / 1000)
+}
+
+/** History before the 2026-08-17 price period (platform API retains from 2026-08-01). */
+const HISTORY_START = gmt8Start('2026-08-01')
+const CUTOFF_DATE = '2026-08-17'
+const CUTOFF_START = gmt8Start(CUTOFF_DATE)
 
 /** Common private-API headers. */
 function headers(token: string): Record<string, string> {
@@ -88,24 +98,94 @@ interface CostPayload {
   data?: CostCurrencyGroup[]
 }
 
+/** Aggregate an amount payload across all API keys/models. */
+function aggregateAmount(amount: AmountPayload): {
+  tokens: number
+  requests: number
+  modelUsage: Map<string, { requests: number; tokens: number }>
+} {
+  const modelUsage = new Map<string, { requests: number; tokens: number }>()
+  let tokens = 0
+  let requests = 0
+  for (const series of amount.series ?? []) {
+    const model = series.model ?? 'unknown'
+    const entry = modelUsage.get(model) ?? { requests: 0, tokens: 0 }
+    for (const bucket of series.buckets ?? []) {
+      const usage = bucket.usage
+      if (!usage) continue
+      const bucketTokens = (usage.RESPONSE_TOKEN ?? 0)
+        + (usage.PROMPT_CACHE_HIT_TOKEN ?? 0)
+        + (usage.PROMPT_CACHE_MISS_TOKEN ?? 0)
+      const bucketRequests = usage.REQUEST ?? 0
+      entry.requests += bucketRequests
+      entry.tokens += bucketTokens
+      tokens += bucketTokens
+      requests += bucketRequests
+    }
+    modelUsage.set(model, entry)
+  }
+  return { tokens, requests, modelUsage }
+}
+
+/** Aggregate a cost payload for one currency. */
+function aggregateCost(cost: CostPayload, currency: string): {
+  total: number
+  modelCosts: Map<string, number>
+} {
+  const modelCosts = new Map<string, number>()
+  let total = 0
+  for (const currencyGroup of cost.data ?? []) {
+    if (currencyGroup.currency !== currency) continue
+    for (const series of currencyGroup.series ?? []) {
+      const model = series.model ?? 'unknown'
+      let modelCost = 0
+      for (const bucket of series.buckets ?? []) {
+        modelCost += Number(bucket.cost ?? 0)
+      }
+      total += modelCost
+      modelCosts.set(model, (modelCosts.get(model) ?? 0) + modelCost)
+    }
+  }
+  return { total, modelCosts }
+}
+
 /** Today's GMT+8 start/end second timestamps. */
 export function todayRange(): { start: number; end: number } {
   const date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })
-  const start = Math.floor(new Date(`${date}T00:00:00+08:00`).getTime() / 1000)
+  const start = gmt8Start(date)
   return { start, end: start + 86_400 }
 }
 
+/** Build the R0 multiplier from historical and current averages. */
+function buildPriceRatio(historicalTokens: number, historicalCost: number, currentTokens: number, currentCost: number): PriceRatio {
+  const a1 = historicalTokens > 0 ? historicalCost / historicalTokens : null
+  const a2 = currentTokens > 0 ? currentCost / currentTokens : null
+  const r0 = a1 !== null && a1 > 0 && a2 !== null ? a2 / a1 : null
+  return {
+    has_history: historicalTokens > 0 && historicalCost > 0,
+    a1,
+    a2,
+    r0,
+    cutoff: CUTOFF_DATE,
+  }
+}
+
 /**
- * Fetch exact balance, cumulative cost, and today's usage/cost from the
- * DeepSeek Platform private API.
+ * Fetch exact balance, cumulative cost, today's usage/cost, and the R0 price
+ * multiplier from the DeepSeek Platform private API.
  * @param token - platform web `userToken`.
  * @returns a fully platform-sourced snapshot.
  */
 export async function fetchPlatformSnapshot(token: string): Promise<PlatformSnapshot> {
-  const [summary, amount, cost] = await Promise.all([
+  const current = todayRange()
+  const historyEnd = CUTOFF_START
+
+  const [summary, todayAmount, todayCost, historyAmount, historyCost] = await Promise.all([
     getPlatform<UserSummary>('/api/v0/users/get_user_summary', token),
-    getPlatform<AmountPayload>(`/api/v0/usage/by_api_key/amount?start=${todayRange().start}&end=${todayRange().end}&tz=${TZ_OFFSET_SECONDS}`, token),
-    getPlatform<CostPayload>(`/api/v0/usage/by_api_key/cost?start=${todayRange().start}&end=${todayRange().end}&tz=${TZ_OFFSET_SECONDS}`, token),
+    getPlatform<AmountPayload>(`/api/v0/usage/by_api_key/amount?start=${current.start}&end=${current.end}&tz=${TZ_OFFSET_SECONDS}`, token),
+    getPlatform<CostPayload>(`/api/v0/usage/by_api_key/cost?start=${current.start}&end=${current.end}&tz=${TZ_OFFSET_SECONDS}`, token),
+    getPlatform<AmountPayload>(`/api/v0/usage/by_api_key/amount?start=${HISTORY_START}&end=${historyEnd}&tz=${TZ_OFFSET_SECONDS}`, token),
+    getPlatform<CostPayload>(`/api/v0/usage/by_api_key/cost?start=${HISTORY_START}&end=${historyEnd}&tz=${TZ_OFFSET_SECONDS}`, token),
   ])
 
   const wallets = summary.normal_wallets ?? []
@@ -116,45 +196,17 @@ export async function fetchPlatformSnapshot(token: string): Promise<PlatformSnap
   const bonusBalance = Number(bonus.find(w => w.currency === currency)?.balance ?? 0)
   const totalCost = Number(costs.find(w => w.currency === currency)?.amount ?? 0)
 
-  const modelUsage = new Map<string, { requests: number; tokens: number }>()
-  for (const series of amount.series ?? []) {
-    const model = series.model ?? 'unknown'
-    const entry = modelUsage.get(model) ?? { requests: 0, tokens: 0 }
-    for (const bucket of series.buckets ?? []) {
-      const usage = bucket.usage
-      if (!usage) continue
-      entry.requests += usage.REQUEST ?? 0
-      entry.tokens += (usage.RESPONSE_TOKEN ?? 0)
-        + (usage.PROMPT_CACHE_HIT_TOKEN ?? 0)
-        + (usage.PROMPT_CACHE_MISS_TOKEN ?? 0)
-    }
-    modelUsage.set(model, entry)
-  }
+  const currentAmount = aggregateAmount(todayAmount)
+  const currentCost = aggregateCost(todayCost, currency)
+  const historyAmountAgg = aggregateAmount(historyAmount)
+  const historyCostAgg = aggregateCost(historyCost, currency)
 
-  const modelCosts = new Map<string, number>()
-  let todayCost = 0
-  for (const currencyGroup of cost.data ?? []) {
-    if (currencyGroup.currency !== currency) continue
-    for (const series of currencyGroup.series ?? []) {
-      const model = series.model ?? 'unknown'
-      let modelCost = 0
-      for (const bucket of series.buckets ?? []) {
-        modelCost += Number(bucket.cost ?? 0)
-      }
-      todayCost += modelCost
-      modelCosts.set(model, (modelCosts.get(model) ?? 0) + modelCost)
-    }
-  }
-
-  const models = [...modelUsage.keys()].map(model => ({
+  const models = [...currentAmount.modelUsage.keys()].map(model => ({
     model,
-    requests: modelUsage.get(model)?.requests ?? 0,
-    tokens: modelUsage.get(model)?.tokens ?? 0,
-    cost: modelCosts.get(model) ?? 0,
+    requests: currentAmount.modelUsage.get(model)?.requests ?? 0,
+    tokens: currentAmount.modelUsage.get(model)?.tokens ?? 0,
+    cost: currentCost.modelCosts.get(model) ?? 0,
   })).sort((a, b) => b.cost - a.cost || b.tokens - a.tokens)
-
-  const todayTokens = [...modelUsage.values()].reduce((sum, item) => sum + item.tokens, 0)
-  const todayRequests = [...modelUsage.values()].reduce((sum, item) => sum + item.requests, 0)
 
   return {
     fetched_at: new Date().toISOString(),
@@ -166,10 +218,11 @@ export async function fetchPlatformSnapshot(token: string): Promise<PlatformSnap
     },
     today: {
       date: new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' }),
-      requests: todayRequests,
-      tokens: todayTokens,
-      cost: todayCost,
+      requests: currentAmount.requests,
+      tokens: currentAmount.tokens,
+      cost: currentCost.total,
       models,
     },
+    price_ratio: buildPriceRatio(historyAmountAgg.tokens, historyCostAgg.total, currentAmount.tokens, currentCost.total),
   }
 }

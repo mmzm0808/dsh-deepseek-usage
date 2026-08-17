@@ -1,4 +1,2 @@
-# dsh-deepseek-usage bundle layer
-- insert:
-    - id: dsh-deepseek-usage
-      name: dsh-deepseek-usage
+# 空 patch：插件只通过 profile 的 bundles 列表加载自身，不在包内重复 insert。
+[]

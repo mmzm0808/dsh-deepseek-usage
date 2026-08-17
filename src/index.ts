@@ -102,15 +102,15 @@ function resolveUserToken(config: Config): string | undefined {
 export function apply(ctx: AppContext, config: Config): void {
   const token = resolveUserToken(config)
   let snapshot: PlatformSnapshot = token === undefined
-    ? { balance: null, today: null, error: '未登录 DeepSeek 开放平台，请点击面板中的“登录”按钮', fetched_at: new Date().toISOString() }
-    : { balance: null, today: null, fetched_at: new Date().toISOString() }
+    ? { balance: null, today: null, price_ratio: null, error: '未登录 DeepSeek 开放平台，请点击面板中的“登录”按钮', fetched_at: new Date().toISOString() }
+    : { balance: null, today: null, price_ratio: null, fetched_at: new Date().toISOString() }
 
   const getState = (): PlatformSnapshot => snapshot
 
   const refresh = async (): Promise<PlatformSnapshot> => {
     const current = resolveUserToken(config)
     if (!current) {
-      snapshot = { balance: null, today: null, error: '未登录 DeepSeek 开放平台，请点击面板中的“登录”按钮', fetched_at: new Date().toISOString() }
+      snapshot = { balance: null, today: null, price_ratio: null, error: '未登录 DeepSeek 开放平台，请点击面板中的“登录”按钮', fetched_at: new Date().toISOString() }
       return snapshot
     }
     try {
@@ -119,6 +119,7 @@ export function apply(ctx: AppContext, config: Config): void {
       snapshot = {
         balance: null,
         today: null,
+        price_ratio: null,
         error: error instanceof Error ? error.message : String(error),
         fetched_at: new Date().toISOString(),
       }

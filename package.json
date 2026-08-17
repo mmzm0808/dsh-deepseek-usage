@@ -2,7 +2,11 @@
   "name": "dsh-deepseek-usage",
   "version": "0.1.0",
   "description": "DeepSeek API 用量监测：侧边栏悬浮球 + 展开面板，展示真实余额、当日 Tokens、分模型用量与预估消费。",
-  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mmzm0808/dsh-deepseek-usage.git"
+  },
+  "homepage": "https://github.com/mmzm0808/dsh-deepseek-usage",
   "type": "module",
   "main": "./lib/index.js",
   "types": "./lib/types/index.d.ts",
