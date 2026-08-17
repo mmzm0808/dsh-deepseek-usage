@@ -54,7 +54,19 @@ dsh plugin --profile web add "E:\ProgramData\deepseek-harness\DSH_Anything\dsh-d
 4. **退出登录**：点击面板底部「退出登录」，清除本机 userToken 后重新登录
 5. **收起**：点击面板外部任意位置、Esc 或面板右上角 ✕ 均可收起
 
-## 🔑 配置
+## 🔑 登录与配置
+
+### ✅ 推荐方式：面板一键登录
+
+不需要手动复制任何 token。
+
+1. 打开悬浮球面板
+2. 点击面板底部 **「登录」**
+3. 插件会打开本地 Edge 窗口进入 DeepSeek 开放平台
+4. 你在窗口中正常登录
+5. 登录成功后插件自动读取并保存 `userToken`，然后自动刷新数据
+
+### 手动配置（可选）
 
 `userToken` 是平台 Web 登录态，只作为配置项，不写入插件源码/包内。
 
@@ -72,9 +84,7 @@ dsh plugin --profile web add "E:\ProgramData\deepseek-harness\DSH_Anything\dsh-d
 DEEPSEEK_PLATFORM_USER_TOKEN=你的 userToken
 ```
 
-获取方式：登录 `https://platform.deepseek.com/usage` → F12 → Application → Local Storage → `https://platform.deepseek.com` → `userToken` → 复制 JSON 里的 `value` 字段。
-
-也可以不手动配置：点击面板中的 **「登录」** 按钮，插件会打开本地 Edge 窗口让你登录 DeepSeek 开放平台，登录成功后自动读取并保存 `userToken`。
+手动获取方式：登录 `https://platform.deepseek.com/usage` → F12 → Application → Local Storage → `https://platform.deepseek.com` → `userToken` → 复制 JSON 里的 `value` 字段。
 
 ## 🗂️ 数据与安全
 
