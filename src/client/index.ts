@@ -36,7 +36,9 @@ body:not([data-ds-dark-theme]) [data-${NS}] { --dsu-bg:#eef0f4; --dsu-panel:#fff
 [data-${NS}] *{ box-sizing:border-box; }
 .${NS}-ball{ position:absolute; top:calc(50% - 26px); right:0; display:flex; align-items:center; gap:10px; background:var(--dsu-panel-2); border:1px solid color-mix(in srgb, var(--dsu-brand) 45%, transparent); border-radius:999px 0 0 999px; padding:10px 14px 10px 12px; box-shadow:0 12px 30px rgba(0,0,0,.45),0 0 0 1px color-mix(in srgb, var(--dsu-brand) 12%, transparent); cursor:grab; transition:box-shadow .15s ease; user-select:none; pointer-events:auto; touch-action:none; }
 .${NS}-ball:hover{ box-shadow:0 14px 34px rgba(77,107,254,.24),0 0 0 1px rgba(77,107,254,.3); }
-.${NS}-icon{ width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,#4d6bfe,#7c5cfc); display:flex; align-items:center; justify-content:center; color:#fff; font-size:15px; }
+.${NS}-icon{ width:32px; height:32px; border-radius:50%; background:linear-gradient(135deg,#4d6bfe,#7c5cfc); display:flex; align-items:center; justify-content:center; color:#fff; font-size:14px; font-weight:800; }
+.${NS}-icon.peak{ background:linear-gradient(135deg,#ef4444,#b91c1c); }
+.${NS}-icon.valley{ background:linear-gradient(135deg,#10b981,#047857); }
 .${NS}-copy{ display:flex; flex-direction:column; gap:1px; min-width:74px; }
 .${NS}-copy .k{ font-size:11px; color:var(--dsu-muted); line-height:1; }
 .${NS}-copy .v{ font-size:15px; font-weight:650; line-height:1.2; font-variant-numeric:tabular-nums; }
@@ -125,6 +127,14 @@ function toScientific(value: number): string {
   return `${mantissa.toFixed(2)}×10${expText}`
 }
 
+/** Return whether the current Beijing time is peak or valley. */
+function peakValley(): { text: '峰' | '谷'; cls: 'peak' | 'valley' } {
+  const now = new Date()
+  const hour = Number(now.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour: '2-digit', hour12: false }))
+  const peak = (hour >= 9 && hour < 12) || (hour >= 14 && hour < 18)
+  return peak ? { text: '峰', cls: 'peak' } : { text: '谷', cls: 'valley' }
+}
+
 /** Mount the floating widget. */
 export function apply(ctx: ClientContext): void {
   let styleEl: HTMLStyleElement | null = null
@@ -140,7 +150,7 @@ export function apply(ctx: ClientContext): void {
   host.innerHTML = `
     <div class="${NS}-ball" role="button" tabindex="0" aria-label="DeepSeek API 用量">
       <span class="${NS}-dot"></span>
-      <div class="${NS}-icon">◈</div>
+      <div class="${NS}-icon" data-field="ball-icon">峰</div>
       <div class="${NS}-copy">
         <span class="${NS}-ball-line"><span class="k">余额</span><span class="v">--</span></span>
         <span class="${NS}-ball-r0" data-field="ball-r0">--</span>
@@ -231,6 +241,7 @@ export function apply(ctx: ClientContext): void {
     amount: host.querySelector(`.${NS}-amount`) as HTMLElement,
     amountSub: host.querySelector(`.${NS}-amount-sub`) as HTMLElement,
     ballR0: host.querySelector('[data-field="ball-r0"]') as HTMLElement,
+    ballIcon: host.querySelector('[data-field="ball-icon"]') as HTMLElement,
     modelSelect: host.querySelector('[data-field="model-select"]') as HTMLSelectElement,
     r0Total: host.querySelector('[data-field="r0-total"]') as HTMLElement,
     r0Today: host.querySelector('[data-field="r0-today"]') as HTMLElement,
@@ -257,7 +268,15 @@ export function apply(ctx: ClientContext): void {
     if (open) void load()
   }
 
+  const updatePeakValleyIcon = (): void => {
+    const pv = peakValley()
+    stateFields.ballIcon.textContent = pv.text
+    stateFields.ballIcon.classList.toggle('peak', pv.cls === 'peak')
+    stateFields.ballIcon.classList.toggle('valley', pv.cls === 'valley')
+  }
+
   const load = async (): Promise<void> => {
+    updatePeakValleyIcon()
     try {
       const response = await fetch('/api/deepseek-usage/state', { headers: { accept: 'application/json' } })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
