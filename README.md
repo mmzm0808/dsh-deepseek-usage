@@ -31,12 +31,6 @@
 dsh plugin --profile web add github:mmzm0808/dsh-deepseek-usage
 ```
 
-### npm 安装
-
-```sh
-dsh plugin --profile web add dsh-deepseek-usage
-```
-
 ### 本地开发安装
 
 ```sh
@@ -45,6 +39,7 @@ dsh plugin --profile web add "E:\ProgramData\deepseek-harness\DSH_Anything\dsh-d
 
 - 仓库已提交完整 `lib/` 构建产物，安装**无需执行构建脚本**（pnpm ≥10 的 allowBuilds 门禁不影响本插件）
 - 安装后**重启 dsh**（新 bundle 层在启动时加载）
+- DSH 插件开发使用 **pnpm**；GitHub 分发不要求发布 npm
 
 ## 📖 使用
 
