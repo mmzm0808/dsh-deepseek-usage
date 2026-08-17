@@ -34,7 +34,7 @@ export interface Config {
 }
 
 export const Config: z<Config> = z.object({
-  refreshIntervalMs: z.number().min(5000).default(300_000),
+  refreshIntervalMs: z.number().min(5000).default(10_000),
   platformUserToken: z.string().default(''),
 })
 
