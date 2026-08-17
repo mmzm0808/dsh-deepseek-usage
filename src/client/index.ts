@@ -6,13 +6,13 @@
  */
 
 import type { UsageState } from '../protocol.js'
-import { VentusFallbackGroupCard } from './VentusFallbackGroupCard.js'
 import { DeepSeekUsageSettingsCard } from './VentusSettingsCard.js'
+import { VentusSettingsPage } from './VentusSettingsPage.js'
 
 /** Minimal slot service face used by this plugin. */
 interface SlotsLike {
   inject(key: string, callback: () => () => void): () => void
-  register(options: { name: string; id: string; order?: number; children?: Record<string, unknown> }, component: unknown): () => void
+  register(options: { name: string; id: string; order?: number; label?: () => string; children?: Record<string, unknown> }, component: unknown): () => void
   snapshot(root?: string): unknown
 }
 
@@ -554,21 +554,22 @@ export function apply(ctx: ClientContext): void {
     id: 'dsh-deepseek-usage',
     order: 100,
   }, () => null))
-  const disposeVentusCard = ctx.slots.inject('ventus.plugin.item', () => ctx.slots.register({
-    name: 'ventus.plugin.item',
+  const disposeUsageCard = ctx.slots.inject('ventus.settings.item', () => ctx.slots.register({
+    name: 'ventus.settings.item',
     id: 'dsh-deepseek-usage',
     order: 20,
   }, DeepSeekUsageSettingsCard))
 
-  let disposeFallbackCard: (() => void) | undefined
-  const fallbackTimer = setTimeout(() => {
-    if (containsSlot(ctx.slots.snapshot(), 'ventus.plugin.item')) return
-    disposeFallbackCard = ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
-      name: 'settings.plugin.item',
-      id: 'dsh-deepseek-usage-ventus-group',
-      order: 90,
-      children: { 'ventus.plugin.item': { kind: 'list', scope: 'root' } },
-    }, VentusFallbackGroupCard))
+  let disposeVentusPage: (() => void) | undefined
+  const pageTimer = setTimeout(() => {
+    if (containsSlot(ctx.slots.snapshot(), 'ventus.settings.item')) return
+    disposeVentusPage = ctx.slots.inject('settings.section', () => ctx.slots.register({
+      name: 'settings.section',
+      id: 'ventus',
+      order: 60,
+      label: () => 'Ventus',
+      children: { 'ventus.settings.item': { kind: 'list', scope: 'root' } },
+    }, VentusSettingsPage))
   }, 800)
 
   void load()
@@ -577,10 +578,10 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => () => {
     clearInterval(timer)
     clearInterval(loginPollTimer)
-    clearTimeout(fallbackTimer)
+    clearTimeout(pageTimer)
     disposeOverlay()
-    disposeVentusCard()
-    disposeFallbackCard?.()
+    disposeUsageCard()
+    disposeVentusPage?.()
     document.removeEventListener('keydown', onKeydown)
     document.removeEventListener('click', onDocumentClick)
     host.remove()

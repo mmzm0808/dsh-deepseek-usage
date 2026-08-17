@@ -11,6 +11,7 @@ interface SlotsLike {
         name: string;
         id: string;
         order?: number;
+        label?: () => string;
         children?: Record<string, unknown>;
     }, component: unknown): () => void;
     snapshot(root?: string): unknown;

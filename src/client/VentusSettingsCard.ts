@@ -1,51 +1,88 @@
 /**
  * DeepSeek API 用量 settings card registered into the Ventus plugin series.
- * Collapsed by default; the user clicks the chevron to expand.
+ * Collapsed by default; the header row toggles the body. Visual chrome mirrors
+ * the dsh-ventus-whale settings card so the two Ventus pages stay unified.
  * @module dsh-deepseek-usage/client/VentusSettingsCard
  */
 
 import { createElement, useState } from 'react'
 
-/** Minimal inline styles matching the Ventus settings card chrome. */
+/** Card chrome matching the Ventus whale settings card (gradient + platform bg). */
 const cardStyle: Record<string, string> = {
   listStyle: 'none',
-  padding: '14px 16px',
+  padding: '16px 18px',
   border: '1px solid var(--dsw-alias-line-normal)',
   borderRadius: '12px',
-  background: 'var(--dsw-alias-bg-module-platform)',
+  background:
+    'linear-gradient(180deg, color-mix(in srgb, var(--dsw-alias-state-business-primary) 5%, transparent), transparent 45%), var(--dsw-alias-bg-module-platform)',
+  boxShadow: 'inset 0 1px 0 rgb(255 255 255 / 0.03)',
   color: 'var(--dsw-alias-label-primary)',
   fontFamily: 'inherit',
 }
 
+/** Header row: the whole row toggles the body. */
 const headStyle: Record<string, string> = {
   display: 'flex',
   alignItems: 'center',
   gap: '8px',
+  marginBottom: '12px',
   cursor: 'pointer',
 }
 
+/** Title with the brand-blue accent bar (mirrors the whale card's ::before). */
 const titleStyle: Record<string, string> = {
-  flex: '1',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
   fontSize: '14px',
   fontWeight: '700',
+  color: 'var(--dsw-alias-label-primary)',
+}
+
+const accentStyle: Record<string, string> = {
+  width: '3px',
+  height: '14px',
+  borderRadius: '2px',
+  background: 'var(--dsw-alias-state-business-primary)',
+  boxShadow: '0 0 10px color-mix(in srgb, var(--dsw-alias-state-business-primary) 55%, transparent)',
+  flex: 'none',
+}
+
+const chevronStyle: Record<string, string> = {
+  flex: 'none',
+  marginLeft: '8px',
+  color: 'var(--dsw-alias-label-secondary)',
+  fontSize: '12px',
+  transition: 'transform 150ms ease',
 }
 
 const bodyStyle: Record<string, string> = {
-  marginTop: '10px',
   display: 'flex',
   flexDirection: 'column',
-  gap: '8px',
+  gap: '12px',
   fontSize: '13px',
 }
 
 const buttonStyle: Record<string, string> = {
   alignSelf: 'flex-start',
-  padding: '6px 12px',
-  borderRadius: '8px',
-  border: '1px solid var(--dsw-alias-line-normal)',
-  background: 'transparent',
-  color: 'var(--dsw-alias-label-primary)',
+  appearance: 'none',
+  WebkitAppearance: 'none',
+  height: '32px',
+  padding: '0 14px',
+  borderRadius: '10px',
+  border: '1px solid var(--dsw-alias-state-business-primary, #4d6bfe)',
+  background: 'var(--dsw-alias-state-business-primary, #4d6bfe)',
+  color: '#fff',
+  boxShadow: '0 2px 8px rgba(77,107,254,.35)',
+  fontSize: '13px',
+  fontWeight: '600',
+  fontFamily: 'inherit',
+  lineHeight: '30px',
   cursor: 'pointer',
+}
+
+const mutedStyle: Record<string, string> = {
+  color: 'var(--dsw-alias-label-secondary)',
 }
 
 /** Settings card for the DeepSeek usage monitor. */
@@ -64,34 +101,37 @@ export function DeepSeekUsageSettingsCard(): unknown {
     }
   }
 
-  return createElement(
-    'li',
-    { style: cardStyle },
-    createElement(
-      'div',
-      {
-        style: headStyle,
-        role: 'button',
-        tabIndex: 0,
-        onClick: () => setCollapsed(current => !current),
-        onKeyDown: (event: KeyboardEvent) => {
-          if (event.key === 'Enter' || event.key === ' ') {
-            event.preventDefault()
-            setCollapsed(current => !current)
-          }
-        },
+  const head = createElement(
+    'div',
+    {
+      style: headStyle,
+      role: 'button',
+      tabIndex: 0,
+      'aria-expanded': !collapsed,
+      onClick: () => setCollapsed(current => !current),
+      onKeyDown: (event: KeyboardEvent) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          setCollapsed(current => !current)
+        }
       },
-      createElement('span', { style: titleStyle }, 'DeepSeek API 用量'),
-      createElement('span', { style: { fontSize: '12px' } }, collapsed ? '▸' : '▾'),
+    },
+    createElement(
+      'span',
+      { style: titleStyle },
+      createElement('span', { style: accentStyle }),
+      'DeepSeek API 用量',
     ),
-    collapsed
-      ? null
-      : createElement(
-        'div',
-        { style: bodyStyle },
-        createElement('span', null, '登录状态：请点击下方按钮登录 DeepSeek 开放平台'),
-        createElement('button', { style: buttonStyle, onClick: () => void startLogin() }, '打开登录窗口'),
-        loginMessage ? createElement('span', { style: { color: 'var(--dsw-alias-label-secondary)' } }, loginMessage) : null,
-      ),
+    createElement('span', { style: { ...chevronStyle, transform: collapsed ? 'none' : 'rotate(180deg)' } }, '▾'),
   )
+  const body = collapsed
+    ? null
+    : createElement(
+      'div',
+      { style: bodyStyle },
+      createElement('span', { style: mutedStyle }, '登录状态：请点击下方按钮登录 DeepSeek 开放平台'),
+      createElement('button', { style: buttonStyle, onClick: () => void startLogin() }, '打开登录窗口'),
+      loginMessage ? createElement('span', { style: mutedStyle }, loginMessage) : null,
+    )
+  return createElement('li', { style: cardStyle }, head, body)
 }
