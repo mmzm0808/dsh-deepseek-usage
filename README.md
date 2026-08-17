@@ -19,10 +19,6 @@
   <img alt="runtime" src="https://img.shields.io/badge/runtime-dsh%20web-4d6bfe">
 </p>
 
-<p align="center">
-  <img alt="Star History" src="https://api.star-history.com/svg?repos=mmzm0808/dsh-deepseek-usage&type=Date">
-</p>
-
 ## ✨ 特性
 
 | 分类 | 说明 |
@@ -111,3 +107,9 @@ pnpm verify
 ## 📄 许可证
 
 MIT License · Copyright (c) 2026 mmzm0808
+
+## ⭐ Star History
+
+<p align="center">
+  <img alt="Star History" src="https://api.star-history.com/svg?repos=mmzm0808/dsh-deepseek-usage&type=Date">
+</p>
