@@ -63,6 +63,10 @@ body:not([data-ds-dark-theme]) [data-${NS}] { --dsu-bg:#eef0f4; --dsu-panel:#fff
 .${NS}-amount{ font-size:30px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
 .${NS}-amount-sub{ color:var(--dsu-muted); font-size:13px; }
 .${NS}-r0{ padding:4px 10px; border-radius:999px; background:color-mix(in srgb, var(--dsu-gold) 12%, transparent); border:1px solid color-mix(in srgb, var(--dsu-gold) 35%, transparent); color:var(--dsu-gold); font-size:12px; font-weight:650; white-space:nowrap; }
+.${NS}-pv-badge{ padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600; white-space:nowrap; }
+.${NS}-pv-badge b{ font-weight:900; }
+.${NS}-pv-badge.peak{ background:color-mix(in srgb, #ef4444 16%, transparent); border:1px solid color-mix(in srgb, #ef4444 45%, transparent); color:#dc2626; }
+.${NS}-pv-badge.valley{ background:color-mix(in srgb, #10b981 16%, transparent); border:1px solid color-mix(in srgb, #10b981 45%, transparent); color:#047857; }
 .${NS}-balance-detail{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px; }
 .${NS}-balance-detail .item{ background:rgba(0,0,0,.18); border:1px solid rgba(255,255,255,.05); border-radius:10px; padding:8px 10px; }
 .${NS}-balance-detail .k{ font-size:12px; color:var(--dsu-muted); margin-bottom:2px; }
@@ -169,6 +173,7 @@ export function apply(ctx: ClientContext): void {
           <div class="${NS}-balance">
             <div class="${NS}-balance-top">
               <span>DeepSeek 开放平台</span>
+              <span class="${NS}-pv-badge" data-field="pv-badge">--</span>
               <span data-field="source">--</span>
             </div>
             <div class="${NS}-balance-main">
@@ -242,6 +247,7 @@ export function apply(ctx: ClientContext): void {
     amountSub: host.querySelector(`.${NS}-amount-sub`) as HTMLElement,
     ballR0: host.querySelector('[data-field="ball-r0"]') as HTMLElement,
     ballIcon: host.querySelector('[data-field="ball-icon"]') as HTMLElement,
+    pvBadge: host.querySelector('[data-field="pv-badge"]') as HTMLElement,
     modelSelect: host.querySelector('[data-field="model-select"]') as HTMLSelectElement,
     r0Total: host.querySelector('[data-field="r0-total"]') as HTMLElement,
     r0Today: host.querySelector('[data-field="r0-today"]') as HTMLElement,
@@ -273,6 +279,9 @@ export function apply(ctx: ClientContext): void {
     stateFields.ballIcon.textContent = pv.text
     stateFields.ballIcon.classList.toggle('peak', pv.cls === 'peak')
     stateFields.ballIcon.classList.toggle('valley', pv.cls === 'valley')
+    stateFields.pvBadge.innerHTML = pv.text === '峰' ? '梁文<b>峰</b>时刻' : '梁文<b>谷</b>时刻'
+    stateFields.pvBadge.classList.toggle('peak', pv.cls === 'peak')
+    stateFields.pvBadge.classList.toggle('valley', pv.cls === 'valley')
   }
 
   const load = async (): Promise<void> => {
