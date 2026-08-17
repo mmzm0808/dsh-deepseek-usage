@@ -39,6 +39,7 @@ const CSS = `
 .${NS}-copy{ display:flex; flex-direction:column; gap:1px; min-width:74px; }
 .${NS}-copy .k{ font-size:11px; color:var(--dsu-muted); line-height:1; }
 .${NS}-copy .v{ font-size:15px; font-weight:650; line-height:1.2; font-variant-numeric:tabular-nums; }
+.${NS}-ball-r0{ display:inline-block; margin-top:3px; padding:2px 8px; border-radius:999px; background:rgba(255,209,102,.14); border:1px solid rgba(255,209,102,.4); color:#ffd166; font-size:12px; font-weight:700; white-space:nowrap; }
 .${NS}-chevron{ color:var(--dsu-muted); font-size:13px; margin-left:2px; }
 .${NS}-dot{ position:absolute; top:8px; right:8px; width:8px; height:8px; border-radius:50%; background:var(--dsu-green); box-shadow:0 0 0 4px rgba(52,211,153,.12); }
 .${NS}-panel{ position:absolute; right:0; top:0; bottom:0; width:460px; max-width:94vw; background:var(--dsu-panel); border-left:1px solid var(--dsu-border); box-shadow:-20px 0 60px rgba(0,0,0,.4); display:flex; flex-direction:column; z-index:2147483001; transform:translateX(105%); transition:transform .18s ease; pointer-events:auto; }
@@ -52,6 +53,9 @@ const CSS = `
 .${NS}-balance{ background:linear-gradient(135deg,rgba(77,107,254,.18),rgba(124,92,252,.08)); border:1px solid rgba(77,107,254,.28); border-radius:var(--dsu-radius); padding:14px 16px; }
 .${NS}-balance-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; font-size:12px; color:var(--dsu-muted); }
 .${NS}-balance-main{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px; }
+.${NS}-model-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+.${NS}-model-row label{ font-size:12px; color:var(--dsu-muted); }
+.${NS}-model-row select{ height:30px; padding:0 8px; border-radius:8px; border:1px solid var(--dsu-border); background:var(--dsu-panel-2); color:var(--dsu-text); font:inherit; font-size:12px; }
 .${NS}-amount{ font-size:30px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
 .${NS}-amount-sub{ color:var(--dsu-muted); font-size:13px; }
 .${NS}-r0{ padding:4px 10px; border-radius:999px; background:rgba(255,209,102,.12); border:1px solid rgba(255,209,102,.35); color:#ffd166; font-size:12px; font-weight:650; white-space:nowrap; }
@@ -92,6 +96,13 @@ function money(value: number, currency: string): string {
   return currency === 'USD' ? `$${value.toFixed(2)}` : `¥${value.toFixed(2)}`
 }
 
+/** Short display name for tracked models. */
+function shortModelName(model: string): string {
+  if (model.includes('pro')) return 'Pro'
+  if (model.includes('flash')) return 'Flash'
+  return model
+}
+
 /** Mount the floating widget. */
 export function apply(ctx: ClientContext): void {
   let styleEl: HTMLStyleElement | null = null
@@ -111,8 +122,7 @@ export function apply(ctx: ClientContext): void {
       <div class="${NS}-copy">
         <span class="k">充值余额</span>
         <span class="v">--</span>
-        <span class="k">今日R0</span>
-        <span class="v" data-field="ball-r0">--</span>
+        <span class="${NS}-ball-r0" data-field="ball-r0">--</span>
       </div>
       <span class="${NS}-chevron">‹</span>
     </div>
@@ -132,6 +142,13 @@ export function apply(ctx: ClientContext): void {
             </div>
             <div class="${NS}-balance-main">
               <span class="${NS}-amount">--</span><span class="${NS}-amount-sub"></span>
+            </div>
+            <div class="${NS}-model-row">
+              <label for="dsu-model-select">模型</label>
+              <select id="dsu-model-select" data-field="model-select">
+                <option value="deepseek-v4-flash">DeepSeek Flash</option>
+                <option value="deepseek-v4-pro">DeepSeek Pro</option>
+              </select>
               <span class="${NS}-r0" data-field="r0-total" title="8月17日起累计涨价倍率">累计R0 --</span>
               <span class="${NS}-r0" data-field="r0-today" title="今日涨价倍率">今日R0 --</span>
             </div>
@@ -192,6 +209,7 @@ export function apply(ctx: ClientContext): void {
     amount: host.querySelector(`.${NS}-amount`) as HTMLElement,
     amountSub: host.querySelector(`.${NS}-amount-sub`) as HTMLElement,
     ballR0: host.querySelector('[data-field="ball-r0"]') as HTMLElement,
+    modelSelect: host.querySelector('[data-field="model-select"]') as HTMLSelectElement,
     r0Total: host.querySelector('[data-field="r0-total"]') as HTMLElement,
     r0Today: host.querySelector('[data-field="r0-today"]') as HTMLElement,
     bonus: host.querySelector('[data-field="bonus"]') as HTMLElement,
@@ -206,6 +224,8 @@ export function apply(ctx: ClientContext): void {
 
   let open = false
   let currency = 'CNY'
+  let selectedModel = 'deepseek-v4-flash'
+  let lastState: UsageState | null = null
 
   const toggle = (next?: boolean): void => {
     open = next ?? !open
@@ -304,23 +324,35 @@ export function apply(ctx: ClientContext): void {
     }
 
     const ratio = state.price_ratio
-    if (ratio) {
-      const r0Total = ratio.r0_total !== null ? `累计R0 ×${ratio.r0_total.toFixed(2)}` : '累计R0 --'
-      const r0Today = ratio.r0_today !== null ? `今日R0 ×${ratio.r0_today.toFixed(2)}` : '今日R0 --'
-      stateFields.r0Total.textContent = r0Total
-      stateFields.r0Total.title = ratio.has_history
-        ? `8月17日起累计 A2/A1 = ${ratio.a2_total?.toFixed(8)} / ${ratio.a1.toFixed(8)}`
-        : `无涨价前历史，使用默认 A1 = ${ratio.a1.toFixed(8)}`
-      stateFields.r0Today.textContent = r0Today
-      stateFields.r0Today.title = ratio.has_history
-        ? `今日 A2/A1 = ${ratio.a2_today?.toFixed(8)} / ${ratio.a1.toFixed(8)}`
-        : `无涨价前历史，使用默认 A1 = ${ratio.a1.toFixed(8)}`
-      stateFields.ballR0.textContent = ratio.r0_today !== null ? `×${ratio.r0_today.toFixed(2)}` : '--'
+    const modelData = ratio?.models.find(model => model.model === selectedModel)
+    const topModel = state.today?.models.slice().sort((a, b) => b.tokens - a.tokens)[0]?.model
+    const topModelData = ratio?.models.find(model => model.model === topModel)
+
+    if (modelData) {
+      stateFields.r0Total.textContent = !modelData.used_total
+        ? '累计未使用'
+        : modelData.r0_total !== null
+          ? `累计R0 ×${modelData.r0_total.toFixed(2)}`
+          : '累计R0 --'
+      stateFields.r0Total.title = modelData.has_history
+        ? `8月17日起累计 A2/A1 = ${modelData.a2_total?.toFixed(8)} / ${modelData.a1.toFixed(8)}`
+        : `无涨价前历史，使用默认 A1 = ${modelData.a1.toFixed(8)}`
+      stateFields.r0Today.textContent = !modelData.used_today
+        ? '今日未使用'
+        : modelData.r0_today !== null
+          ? `今日R0 ×${modelData.r0_today.toFixed(2)}`
+          : '今日R0 --'
+      stateFields.r0Today.title = modelData.has_history
+        ? `今日 A2/A1 = ${modelData.a2_today?.toFixed(8)} / ${modelData.a1.toFixed(8)}`
+        : `无涨价前历史，使用默认 A1 = ${modelData.a1.toFixed(8)}`
     } else {
       stateFields.r0Total.textContent = '累计R0 --'
       stateFields.r0Today.textContent = '今日R0 --'
-      stateFields.ballR0.textContent = '--'
     }
+
+    stateFields.ballR0.textContent = topModelData && topModelData.used_today && topModelData.r0_today !== null
+      ? `${shortModelName(topModel ?? selectedModel)} ×${topModelData.r0_today.toFixed(2)}`
+      : '--'
 
     const today = state.today
     if (today) {
@@ -346,6 +378,7 @@ export function apply(ctx: ClientContext): void {
     }
 
     stateFields.footer.textContent = `更新于 ${new Date(state.fetched_at).toLocaleTimeString('zh-CN', { hour12: false })}`
+    lastState = state
   }
 
   const escapeHtml = (value: string): string =>
@@ -402,6 +435,10 @@ export function apply(ctx: ClientContext): void {
   host.querySelector('[data-action="login"]')?.addEventListener('click', () => void startLogin())
   host.querySelector('[data-action="logout"]')?.addEventListener('click', () => void logout())
   host.querySelectorAll('[data-action="refresh"]').forEach(el => el.addEventListener('click', () => void refresh()))
+  stateFields.modelSelect.addEventListener('change', () => {
+    selectedModel = stateFields.modelSelect.value
+    if (lastState) render(lastState)
+  })
   host.querySelector('[data-action="close"]')?.addEventListener('click', () => toggle(false))
   const onKeydown = (event: KeyboardEvent): void => {
     if (event.key === 'Escape' && open) toggle(false)

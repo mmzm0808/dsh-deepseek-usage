@@ -6,7 +6,7 @@
  * @module dsh-deepseek-usage/platform
  */
 
-import type { PlatformSnapshot, PriceRatio } from './protocol.js'
+import type { ModelPriceRatio, PlatformSnapshot, PriceRatio } from './protocol.js'
 
 const BASE = 'https://platform.deepseek.com'
 const TZ_OFFSET_SECONDS = 28_800
@@ -159,6 +159,34 @@ export function todayRange(): { start: number; end: number } {
   return { start, end: start + 86_400 }
 }
 
+/** Build one model's R0 pair from historical/since/today aggregates. */
+function buildModelRatio(
+  model: string,
+  historicalTokens: number,
+  historicalCost: number,
+  totalTokens: number,
+  totalCost: number,
+  todayTokens: number,
+  todayCost: number,
+): ModelPriceRatio {
+  const a1 = historicalTokens > 0 ? historicalCost / historicalTokens : DEFAULT_A1
+  const a2Total = totalTokens > 0 ? totalCost / totalTokens : null
+  const r0Total = a2Total !== null ? a2Total / a1 : null
+  const a2Today = todayTokens > 0 ? todayCost / todayTokens : null
+  const r0Today = a2Today !== null ? a2Today / a1 : null
+  return {
+    model,
+    has_history: historicalTokens > 0 && historicalCost > 0,
+    used_total: totalTokens > 0,
+    used_today: todayTokens > 0,
+    a1,
+    a2_total: a2Total,
+    r0_total: r0Total,
+    a2_today: a2Today,
+    r0_today: r0Today,
+  }
+}
+
 /** Build the R0 multipliers from historical, since-cutoff, and today averages. */
 function buildPriceRatio(
   historicalTokens: number,
@@ -167,6 +195,7 @@ function buildPriceRatio(
   totalCost: number,
   todayTokens: number,
   todayCost: number,
+  models: ModelPriceRatio[],
 ): PriceRatio {
   const a1 = historicalTokens > 0 ? historicalCost / historicalTokens : DEFAULT_A1
   const a2Total = totalTokens > 0 ? totalCost / totalTokens : null
@@ -180,6 +209,8 @@ function buildPriceRatio(
     r0_total: r0Total,
     a2_today: a2Today,
     r0_today: r0Today,
+    default_a1: DEFAULT_A1,
+    models,
     cutoff: CUTOFF_DATE,
   }
 }
@@ -226,6 +257,17 @@ export async function fetchPlatformSnapshot(token: string): Promise<PlatformSnap
     cost: currentCost.modelCosts.get(model) ?? 0,
   })).sort((a, b) => b.cost - a.cost || b.tokens - a.tokens)
 
+  const TRACKED_MODELS = ['deepseek-v4-flash', 'deepseek-v4-pro']
+  const modelRatios = TRACKED_MODELS.map(model => buildModelRatio(
+    model,
+    historyAmountAgg.modelUsage.get(model)?.tokens ?? 0,
+    historyCostAgg.modelCosts.get(model) ?? 0,
+    sinceAmountAgg.modelUsage.get(model)?.tokens ?? 0,
+    sinceCostAgg.modelCosts.get(model) ?? 0,
+    currentAmount.modelUsage.get(model)?.tokens ?? 0,
+    currentCost.modelCosts.get(model) ?? 0,
+  ))
+
   return {
     fetched_at: new Date().toISOString(),
     balance: {
@@ -248,6 +290,7 @@ export async function fetchPlatformSnapshot(token: string): Promise<PlatformSnap
       sinceCostAgg.total,
       currentAmount.tokens,
       currentCost.total,
+      modelRatios,
     ),
   }
 }

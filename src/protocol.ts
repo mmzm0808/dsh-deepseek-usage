@@ -32,6 +32,27 @@ export interface PlatformToday {
   models: PlatformModelUsage[]
 }
 
+/** Per-model real-time price multiplier vs historical average. */
+export interface ModelPriceRatio {
+  model: string
+  /** Whether this model had pre-cutoff usage. */
+  has_history: boolean
+  /** Whether this model had any usage from cutoff onward. */
+  used_total: boolean
+  /** Whether this model had usage today. */
+  used_today: boolean
+  /** Historical average cost per token (or default when no history). */
+  a1: number
+  /** Average cost per token from cutoff onward. */
+  a2_total: number | null
+  /** Total multiplier since cutoff. */
+  r0_total: number | null
+  /** Average cost per token today. */
+  a2_today: number | null
+  /** Today's multiplier. */
+  r0_today: number | null
+}
+
 /** Real-time price multiplier vs historical average. */
 export interface PriceRatio {
   /** Whether any pre-cutoff historical data exists. */
@@ -46,6 +67,10 @@ export interface PriceRatio {
   a2_today: number | null
   /** Today's multiplier: a2_today / a1. */
   r0_today: number | null
+  /** Default A1 used when no history exists. */
+  default_a1: number
+  /** Per-model breakdown for flash and pro. */
+  models: ModelPriceRatio[]
   /** Cutoff date used in the calculation. */
   cutoff: string
 }
