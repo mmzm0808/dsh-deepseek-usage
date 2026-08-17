@@ -6,12 +6,13 @@
  */
 
 import type { UsageState } from '../protocol.js'
+import { VentusFallbackGroupCard } from './VentusFallbackGroupCard.js'
 import { DeepSeekUsageSettingsCard } from './VentusSettingsCard.js'
 
 /** Minimal slot service face used by this plugin. */
 interface SlotsLike {
   inject(key: string, callback: () => () => void): () => void
-  register(options: { name: string; id: string; order?: number }, component: unknown): () => void
+  register(options: { name: string; id: string; order?: number; children?: Record<string, unknown> }, component: unknown): () => void
   snapshot(root?: string): unknown
 }
 
@@ -564,9 +565,10 @@ export function apply(ctx: ClientContext): void {
     if (containsSlot(ctx.slots.snapshot(), 'ventus.plugin.item')) return
     disposeFallbackCard = ctx.slots.inject('settings.plugin.item', () => ctx.slots.register({
       name: 'settings.plugin.item',
-      id: 'dsh-deepseek-usage',
+      id: 'dsh-deepseek-usage-ventus-group',
       order: 90,
-    }, DeepSeekUsageSettingsCard))
+      children: { 'ventus.plugin.item': { kind: 'list', scope: 'root' } },
+    }, VentusFallbackGroupCard))
   }, 800)
 
   void load()
