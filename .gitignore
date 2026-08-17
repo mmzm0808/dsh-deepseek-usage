@@ -4,3 +4,5 @@ node_modules/
 *.log
 .tmp/
 Review.png
+Review_light.png
+Review_dark.png
