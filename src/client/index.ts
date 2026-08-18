@@ -156,6 +156,21 @@ function isVisionSource(source: string | undefined): boolean {
   return /^vision-toolkit-/.test(source ?? '')
 }
 
+/** Parse a hex color into RGB components. */
+function hexToRgb(hex: string): [number, number, number] {
+  const value = hex.replace('#', '')
+  const full = value.length === 3 ? value.split('').map(char => char + char).join('') : value
+  const num = Number.parseInt(full, 16)
+  return [(num >> 16) & 255, (num >> 8) & 255, num & 255]
+}
+
+/** Squared RGB distance between two hex colors; larger means more distinct. */
+function colorDistance(a: string, b: string): number {
+  const [r1, g1, b1] = hexToRgb(a)
+  const [r2, g2, b2] = hexToRgb(b)
+  return (r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2
+}
+
 /** Format a number as mantissa × 10^exponent with three significant digits. */
 function toScientific(value: number): string {
   if (value === 0 || !Number.isFinite(value)) return String(value)
@@ -780,23 +795,24 @@ export function apply(ctx: ClientContext): void {
     const secondaryPalette = ['#f87171', '#34d399', '#fbbf24', '#a78bfa', '#22d3ee', '#fb923c', '#f472b6', '#a3e635', '#60a5fa']
     const visionPalette = ['#f59e0b', '#f87171', '#a78bfa', '#34d399', '#fbbf24']
     const usedColors = new Set([color.toLowerCase()])
-    const sourceColors = seriesList.map((series, index) => {
-      if (isVisionSource(series.source)) {
-        const candidate = visionPalette.find(item => !usedColors.has(item.toLowerCase()))
-        if (candidate) {
-          usedColors.add(candidate.toLowerCase())
-          return candidate
-        }
-      } else if (index === 0) {
-        return color
-      } else {
-        const candidate = secondaryPalette.find(item => !usedColors.has(item.toLowerCase()))
-        if (candidate) {
-          usedColors.add(candidate.toLowerCase())
-          return candidate
+    const pickDistinct = (candidates: string[]): string => {
+      let best = candidates[0]!
+      let bestDistance = -1
+      for (const candidate of candidates) {
+        if (usedColors.has(candidate.toLowerCase())) continue
+        const minDistance = Math.min(...[...usedColors].map(used => colorDistance(candidate, used)))
+        if (minDistance > bestDistance) {
+          bestDistance = minDistance
+          best = candidate
         }
       }
-      return `hsl(${(index * 47 + 30) % 360} 70% 60%)`
+      usedColors.add(best.toLowerCase())
+      return best
+    }
+    const sourceColors = seriesList.map((series, index) => {
+      if (isVisionSource(series.source)) return pickDistinct(visionPalette)
+      if (index === 0) return color
+      return pickDistinct(secondaryPalette)
     })
     const rendered = seriesList.map((series, seriesIndex) => {
       const lineColor = sourceColors[seriesIndex]!
