@@ -22,7 +22,7 @@
 | 🟢 Floating ball | Docked on the right by default; draggable vertically; snaps to the left when dragged to the left half |
 | 📋 Usage panel | Recharge balance, bonus balance, cumulative spend, today's spend, API requests, tokens, per-model usage |
 | 📈 R0 multiplier | Real-time `A2 / A1`, where `A1` is the average cost per token before Aug 17 and `A2` is the average cost per token from Aug 17 onward |
-| 🔐 Login flow | If no userToken is configured, open a local Edge window to sign in and automatically save the token |
+| 🔐 Login flow | If no userToken is configured, open a local Chrome / Edge / Brave / Chromium browser to sign in and automatically save the token |
 | 🚪 Logout | Clear the saved userToken in one click and log in again |
 | 🖱️ Interaction | Click outside the panel to close; Esc supported; reduced motion supported |
 
@@ -48,7 +48,7 @@ dsh plugin --profile web add "<absolute path to this repository>"
 
 1. **View**: the floating ball shows the recharge balance; click to open the panel
 2. **Drag**: drag the ball vertically; it snaps to the left or right on release
-3. **Login**: click **Login** in the panel footer and sign in to the DeepSeek platform in the opened Edge window
+3. **Login**: click **Login** in the panel footer and sign in to the DeepSeek platform in the opened Chrome / Edge / Brave / Chromium browser window
 4. **Logout**: click **Logout** in the panel footer to clear the local userToken
 5. **Close**: click outside the panel, press Esc, or click ✕
 
@@ -60,9 +60,11 @@ No manual token copying needed.
 
 1. Open the floating ball panel
 2. Click **Login** in the panel footer
-3. The plugin opens a local Edge window to the DeepSeek platform
+3. The plugin opens a local Chrome / Edge / Brave / Chromium browser window to the DeepSeek platform
 4. Sign in normally
 5. The plugin automatically reads and saves the `userToken`, then refreshes data
+
+> By default it auto-detects Chrome, Edge, Brave, Chromium, etc. You can also set the `DSH_DEEPSEEK_LOGIN_BROWSER` environment variable to the browser executable path.
 
 ### Manual configuration (optional)
 

@@ -1,11 +1,12 @@
 /**
- * DeepSeek Platform login helper. Opens a local Edge window pointed at the
- * platform, lets the user sign in manually, then reads `userToken` from the
- * page's localStorage over the Chrome DevTools Protocol. The token is only
- * stored as a plugin config item; it is never embedded in plugin code.
+ * DeepSeek Platform login helper. Opens a local Chromium-family browser window
+ * (Chrome, Edge, Brave, Chromium, etc.) pointed at the platform, lets the user
+ * sign in manually, then reads `userToken` from the page's localStorage over
+ * the Chrome DevTools Protocol. The token is only stored as a plugin config
+ * item; it is never embedded in plugin code.
  * @module dsh-deepseek-usage/login
  */
-/** Open a visible Edge window logged into the DeepSeek platform. */
+/** Open a visible Chromium-family window logged into the DeepSeek platform. */
 export declare function startPlatformLogin(): Promise<{
     port: number;
 }>;

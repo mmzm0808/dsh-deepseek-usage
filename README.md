@@ -26,7 +26,7 @@
 | 🟢 悬浮球 | 默认停靠右侧，可拖动上下移动，拖到左半边自动吸附左侧 |
 | 📋 用量面板 | 充值余额、赠金余额、累计消费、今日消费、API 请求次数、Tokens、分模型用量 |
 | 📈 R0 涨价倍率 | 实时计算 `A2 / A1`，其中 `A1` 为 8 月 17 日前每 Token 平均消费，`A2` 为 8 月 17 日起每 Token 平均消费 |
-| 🔐 登录机制 | 未配置 userToken 时，可打开本地 Edge 登录开放平台，自动读取并保存 userToken |
+| 🔐 登录机制 | 未配置 userToken 时，可打开本地 Chrome / Edge / Brave / Chromium 等浏览器登录开放平台，自动读取并保存 userToken |
 | 🚪 退出登录 | 一键清除本机保存的 userToken，方便切换账号重新登录 |
 | 🖱️ 交互 | 点击面板外部自动收起；支持键盘 Esc 关闭；支持 reduced motion |
 
@@ -52,7 +52,7 @@ dsh plugin --profile web add "<本仓库本地绝对路径>"
 
 1. **查看**：右侧悬浮球直接显示充值余额，点击展开用量面板
 2. **拖动**：按住悬浮球上下拖动；松手时根据位置自动吸附左侧或右侧
-3. **登录**：未登录时点击面板底部「登录」，在打开的 Edge 窗口中登录 DeepSeek 开放平台
+3. **登录**：未登录时点击面板底部「登录」，在打开的 Chrome / Edge / Brave / Chromium 等浏览器窗口中登录 DeepSeek 开放平台
 4. **退出登录**：点击面板底部「退出登录」，清除本机 userToken 后重新登录
 5. **收起**：点击面板外部任意位置、Esc 或面板右上角 ✕ 均可收起
 
@@ -64,9 +64,11 @@ dsh plugin --profile web add "<本仓库本地绝对路径>"
 
 1. 打开悬浮球面板
 2. 点击面板底部 **「登录」**
-3. 插件会打开本地 Edge 窗口进入 DeepSeek 开放平台
+3. 插件会打开本地 Chrome / Edge / Brave / Chromium 等浏览器窗口进入 DeepSeek 开放平台
 4. 你在窗口中正常登录
 5. 登录成功后插件自动读取并保存 `userToken`，然后自动刷新数据
+
+> 默认自动查找 Chrome、Edge、Brave、Chromium 等浏览器；也可通过环境变量 `DSH_DEEPSEEK_LOGIN_BROWSER` 指定浏览器可执行文件路径。
 
 ### 手动配置（可选）
 
