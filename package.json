@@ -62,7 +62,8 @@
     "build": "bash scripts/build.sh",
     "build:client": "tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "verify": "tsc --noEmit && node scripts/smoke-host.mjs && node scripts/smoke-client.mjs"
+    "check:secrets": "node scripts/check-secrets.mjs",
+    "verify": "tsc --noEmit && node scripts/check-secrets.mjs && node scripts/smoke-host.mjs && node scripts/smoke-client.mjs"
   },
   "license": "MIT"
 }
