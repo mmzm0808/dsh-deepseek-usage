@@ -829,6 +829,31 @@ export function apply(ctx: ClientContext): void {
       circle.addEventListener('mouseenter', () => showChartTooltip(circle))
       circle.addEventListener('mouseleave', () => hideChartTooltip(circle))
     })
+
+    host.querySelectorAll<SVGSVGElement>(`.${NS}-chart-svg`).forEach(svg => {
+      svg.addEventListener('mousemove', (event: MouseEvent) => {
+        const rect = svg.getBoundingClientRect()
+        if (rect.width === 0) return
+        const viewBoxWidth = 600
+        const x = (event.clientX - rect.left) * (viewBoxWidth / rect.width)
+        let nearest: Element | null = null
+        let nearestDistance = Number.POSITIVE_INFINITY
+        svg.querySelectorAll(`.${NS}-point-hit`).forEach(circle => {
+          const cx = Number(circle.getAttribute('data-x') ?? 0)
+          const distance = Math.abs(cx - x)
+          if (distance < nearestDistance) {
+            nearestDistance = distance
+            nearest = circle
+          }
+        })
+        if (nearest) showChartTooltip(nearest)
+      })
+      svg.addEventListener('mouseleave', () => {
+        hideTooltip()
+        const line = svg.querySelector(`.${NS}-hover-line`)
+        if (line) line.setAttribute('opacity', '0')
+      })
+    })
   }
 
   let dragMoved = false

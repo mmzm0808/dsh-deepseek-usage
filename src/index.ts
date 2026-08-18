@@ -51,6 +51,12 @@ function pluginConfigPath(): string {
   return join(home, 'dsh-deepseek-usage', 'config.json')
 }
 
+/** JSON cache file for extracted local model usage history. */
+function modelUsageCachePath(): string {
+  const home = process.env.DSH_HOME ?? join(homedir(), '.dsh')
+  return join(home, 'dsh-deepseek-usage', 'model-usage-cache.json')
+}
+
 /** Read `platformUserToken` from the plugin config file (user-owned config item). */
 function readTokenFromConfigFile(): string | undefined {
   const file = pluginConfigPath()
@@ -190,7 +196,14 @@ export function apply(ctx: AppContext, config: Config): void {
     const cached = modelUsageCache.get(cacheKey)
     if (cached && cached.expires > Date.now()) return cached.data
 
-    const data = await fetchSessionModelUsageSeries(ctx.sessionPersistence, ctx.sessions, start, end, granularity)
+    const data = await fetchSessionModelUsageSeries(
+      ctx.sessionPersistence,
+      ctx.sessions,
+      modelUsageCachePath(),
+      start,
+      end,
+      granularity,
+    )
     modelUsageCache.set(cacheKey, { expires: Date.now() + MODEL_USAGE_CACHE_TTL_MS, data })
     return data
   }
