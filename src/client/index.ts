@@ -90,7 +90,7 @@ body:not([data-ds-dark-theme]) [data-${NS}] { --dsu-bg:#eef0f4; --dsu-panel:#fff
 .${NS}-error{ color:var(--dsu-red); font-size:12px; margin-top:8px; }
 .${NS}-footer{ padding:12px 16px; border-top:1px solid var(--dsu-border); background:var(--dsu-panel-2); display:flex; align-items:center; justify-content:space-between; color:var(--dsu-muted); font-size:12px; }
 .${NS}-footer .refresh{ color:var(--dsu-link); cursor:pointer; }
-.${NS}-tooltip{ position:fixed; z-index:2147483999; display:none; max-width:380px; padding:10px 14px; border-radius:10px; background:var(--dsw-alias-bg-popover, var(--dsu-panel-2)); border:1px solid var(--dsu-border); color:var(--dsu-text); font-size:14px; line-height:1.6; white-space:normal; pointer-events:none; box-shadow:0 10px 28px rgba(0,0,0,.35); backdrop-filter:blur(8px); }
+.${NS}-tooltip{ position:fixed; z-index:2147483999; display:none; max-width:460px; padding:10px 14px; border-radius:10px; background:var(--dsw-alias-bg-popover, var(--dsu-panel-2)); border:1px solid var(--dsu-border); color:var(--dsu-text); font-size:14px; line-height:1.6; white-space:normal; pointer-events:none; box-shadow:0 10px 28px rgba(0,0,0,.35); backdrop-filter:blur(8px); }
 .${NS}-tooltip.visible{ display:block; }
 body:not([data-ds-dark-theme]) [data-${NS}] .${NS}-panel{ box-shadow:-12px 0 32px rgba(15,17,21,.10); }
 body:not([data-ds-dark-theme]) [data-${NS}] .${NS}-ball{ box-shadow:0 8px 24px rgba(15,17,21,.12),0 0 0 1px rgba(77,107,254,.18); }
@@ -149,6 +149,11 @@ function sourceLabel(source: string | undefined): string {
   if (!source) return '直接'
   const match = /^vision-toolkit-(.+)$/.exec(source)
   return match ? `视觉 ${match[1]}` : source
+}
+
+/** Whether a source is a vision-toolkit source. */
+function isVisionSource(source: string | undefined): boolean {
+  return /^vision-toolkit-/.test(source ?? '')
 }
 
 /** Format a number as mantissa × 10^exponent with three significant digits. */
@@ -772,10 +777,26 @@ export function apply(ctx: ClientContext): void {
       : margin.left + (plotWidth * index) / (points.length - 1)
     const y = (value: number): number => margin.top + plotHeight - (plotHeight * Math.min(value, maxTokens)) / maxTokens
 
-    const sourceColors = seriesList.map((_, index) => {
-      if (seriesList.length === 1) return color
-      if (index === 0) return color
-      return ['#f87171', '#34d399', '#fbbf24', '#a78bfa', '#22d3ee'][index - 1] ?? `hsl(${(index * 47) % 360} 70% 60%)`
+    const secondaryPalette = ['#f87171', '#34d399', '#fbbf24', '#a78bfa', '#22d3ee', '#fb923c', '#f472b6', '#a3e635', '#60a5fa']
+    const visionPalette = ['#f59e0b', '#f87171', '#a78bfa', '#34d399', '#fbbf24']
+    const usedColors = new Set([color.toLowerCase()])
+    const sourceColors = seriesList.map((series, index) => {
+      if (isVisionSource(series.source)) {
+        const candidate = visionPalette.find(item => !usedColors.has(item.toLowerCase()))
+        if (candidate) {
+          usedColors.add(candidate.toLowerCase())
+          return candidate
+        }
+      } else if (index === 0) {
+        return color
+      } else {
+        const candidate = secondaryPalette.find(item => !usedColors.has(item.toLowerCase()))
+        if (candidate) {
+          usedColors.add(candidate.toLowerCase())
+          return candidate
+        }
+      }
+      return `hsl(${(index * 47 + 30) % 360} 70% 60%)`
     })
     const rendered = seriesList.map((series, seriesIndex) => {
       const lineColor = sourceColors[seriesIndex]!
@@ -790,6 +811,7 @@ export function apply(ctx: ClientContext): void {
         <circle class="${NS}-point-hit" cx="${x(index).toFixed(1)}" cy="${y(point.tokens).toFixed(1)}" r="10" fill="transparent"
           data-x="${x(index).toFixed(1)}"
           data-source="${escapeHtml(series.source ?? series.provider)}"
+          data-color="${lineColor}"
           data-label="${escapeHtml(point.label)}"
           data-total="${point.tokens}"
           data-input="${point.inputTokens}"
@@ -812,7 +834,8 @@ export function apply(ctx: ClientContext): void {
       }
     }
     const totalHitRate = totalInput > 0 ? totalCacheRead / totalInput * 100 : 0
-    const legend = seriesList.length > 1
+    const hasToolkitSource = seriesList.some(series => /^vision-toolkit-/.test(series.source ?? ''))
+    const legend = seriesList.length > 1 || hasToolkitSource
       ? `<span style="display:inline-flex;gap:10px;flex-wrap:wrap;">${seriesList.map((series, index) => `
           <span style="display:inline-flex;align-items:center;gap:4px;color:var(--dsu-muted);font-size:11px;">
             <i style="width:12px;height:2px;background:${sourceColors[index]};display:inline-block;flex:none;"></i>${escapeHtml(sourceLabel(series.source))}
@@ -859,7 +882,7 @@ export function apply(ctx: ClientContext): void {
     `
   }
 
-  const showChartTooltip = (circle: Element): void => {
+  const showChartTooltip = (circle: Element, clientX?: number, clientY?: number): void => {
     const rect = circle.getBoundingClientRect()
     const x = circle.getAttribute('data-x') ?? '0'
     const svg = circle.closest('svg')
@@ -873,16 +896,20 @@ export function apply(ctx: ClientContext): void {
     const circles = svg
       ? Array.from(svg.querySelectorAll(`.${NS}-point-hit`)).filter(item => item.getAttribute('data-x') === x)
       : [circle]
-    const rows = circles.map(item => {
+    const cards = circles.map(item => {
       const source = item.getAttribute('data-source') ?? ''
+      const color = item.getAttribute('data-color') ?? '#4d6bfe'
       const input = Number(item.getAttribute('data-input') ?? 0)
       const output = Number(item.getAttribute('data-output') ?? 0)
       const cacheRead = Number(item.getAttribute('data-cache-read') ?? 0)
       const cacheWrite = Number(item.getAttribute('data-cache-write') ?? 0)
       const hitRate = Number(item.getAttribute('data-hit-rate') ?? 0)
       return `
-        <div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--dsu-border);">
-          <div style="font-weight:600;margin-bottom:4px;">${escapeHtml(sourceLabel(source))}</div>
+        <div style="background:var(--dsu-panel-2);border:1px solid var(--dsu-border);border-radius:8px;padding:8px 10px;min-width:130px;">
+          <div style="display:flex;align-items:center;gap:6px;font-weight:600;margin-bottom:6px;">
+            <i style="width:10px;height:10px;border-radius:50%;background:${color};display:inline-block;flex:none;"></i>
+            ${escapeHtml(sourceLabel(source))}
+          </div>
           <div>输入 ${compact(input)}</div>
           <div>输出 ${compact(output)}</div>
           <div>缓存命中 ${compact(cacheRead)}</div>
@@ -891,12 +918,26 @@ export function apply(ctx: ClientContext): void {
         </div>
       `
     }).join('')
-    stateFields.tooltip.innerHTML = `<div style="font-weight:600;margin-bottom:6px;">${escapeHtml(label)}</div>${rows}`
-    const left = Math.max(8, Math.min(rect.left + rect.width / 2, window.innerWidth - 380))
-    const top = Math.max(8, rect.top - 10)
-    stateFields.tooltip.style.left = `${left}px`
-    stateFields.tooltip.style.top = `${top}px`
+    stateFields.tooltip.innerHTML = `
+      <div style="font-weight:600;margin-bottom:6px;">${escapeHtml(label)}</div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;">${cards}</div>
+    `
     stateFields.tooltip.classList.add('visible')
+
+    const tooltip = stateFields.tooltip
+    const tooltipWidth = tooltip.offsetWidth || 380
+    const tooltipHeight = tooltip.offsetHeight || 180
+    const pointerX = clientX ?? (rect.left + rect.width / 2)
+    const pointerY = clientY ?? (rect.top + rect.height / 2)
+    const gap = 14
+    let left = pointerX + gap
+    if (left + tooltipWidth > window.innerWidth - 8) left = pointerX - tooltipWidth - gap
+    left = Math.max(8, Math.min(left, window.innerWidth - tooltipWidth - 8))
+    let top = pointerY + gap
+    if (top + tooltipHeight > window.innerHeight - 8) top = pointerY - tooltipHeight - gap
+    top = Math.max(8, Math.min(top, window.innerHeight - tooltipHeight - 8))
+    tooltip.style.left = `${left}px`
+    tooltip.style.top = `${top}px`
   }
 
   const hideChartTooltip = (circle: Element): void => {
@@ -1087,10 +1128,26 @@ export function apply(ctx: ClientContext): void {
   void load()
   const timer = setInterval(() => { void load() }, POLL_MS)
 
+  let hourlyTrendTimer: ReturnType<typeof setTimeout> | undefined
+  const scheduleHourlyTrendRefresh = (): void => {
+    const now = new Date()
+    const next = new Date(now)
+    next.setMinutes(0, 0, 0)
+    next.setSeconds(0, 0)
+    next.setHours(now.getHours() + 1)
+    const delay = Math.max(1000, next.getTime() - now.getTime() + 250)
+    hourlyTrendTimer = setTimeout(() => {
+      if (trendData) void loadTrends()
+      scheduleHourlyTrendRefresh()
+    }, delay)
+  }
+  scheduleHourlyTrendRefresh()
+
   ctx.effect(() => () => {
     clearInterval(timer)
     clearInterval(loginPollTimer)
     clearTimeout(pageTimer)
+    clearTimeout(hourlyTrendTimer)
     disposeOverlay()
     disposeUsageCard()
     disposeVentusPage?.()
