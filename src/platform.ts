@@ -11,6 +11,12 @@ import type { ModelPriceRatio, ModelUsageResponse, ModelUsageSeries, PlatformSna
 const BASE = 'https://platform.deepseek.com'
 const TZ_OFFSET_SECONDS = 28_800
 
+/** Treat non-finite numbers as zero so NaN never poisons aggregates. */
+function safeNumber(value: number | string | undefined): number {
+  const numeric = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(numeric) ? numeric : 0
+}
+
 /** GMT+8 midnight second timestamp for a date string. */
 function gmt8Start(date: string): number {
   return Math.floor(new Date(`${date}T00:00:00+08:00`).getTime() / 1000)
@@ -116,10 +122,10 @@ function aggregateAmount(amount: AmountPayload): {
     for (const bucket of series.buckets ?? []) {
       const usage = bucket.usage
       if (!usage) continue
-      const bucketTokens = (usage.RESPONSE_TOKEN ?? 0)
-        + (usage.PROMPT_CACHE_HIT_TOKEN ?? 0)
-        + (usage.PROMPT_CACHE_MISS_TOKEN ?? 0)
-      const bucketRequests = usage.REQUEST ?? 0
+      const bucketTokens = safeNumber(usage.RESPONSE_TOKEN)
+        + safeNumber(usage.PROMPT_CACHE_HIT_TOKEN)
+        + safeNumber(usage.PROMPT_CACHE_MISS_TOKEN)
+      const bucketRequests = safeNumber(usage.REQUEST)
       entry.requests += bucketRequests
       entry.tokens += bucketTokens
       tokens += bucketTokens
@@ -143,7 +149,7 @@ function aggregateCost(cost: CostPayload, currency: string): {
       const model = series.model ?? 'unknown'
       let modelCost = 0
       for (const bucket of series.buckets ?? []) {
-        modelCost += Number(bucket.cost ?? 0)
+        modelCost += safeNumber(bucket.cost)
       }
       total += modelCost
       modelCosts.set(model, (modelCosts.get(model) ?? 0) + modelCost)
@@ -229,12 +235,12 @@ export async function fetchModelUsageSeries(
         const time = bucket.time
         const usage = bucket.usage
         if (typeof time !== 'number' || !usage) continue
-        const inputTokens = usage.PROMPT_CACHE_MISS_TOKEN ?? 0
-        const outputTokens = usage.RESPONSE_TOKEN ?? 0
-        const cacheReadTokens = usage.PROMPT_CACHE_HIT_TOKEN ?? 0
+        const inputTokens = safeNumber(usage.PROMPT_CACHE_MISS_TOKEN)
+        const outputTokens = safeNumber(usage.RESPONSE_TOKEN)
+        const cacheReadTokens = safeNumber(usage.PROMPT_CACHE_HIT_TOKEN)
         const cacheWriteTokens = 0
         const tokens = inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens
-        const requests = usage.REQUEST ?? 0
+        const requests = safeNumber(usage.REQUEST)
         const local = new Date((time + TZ_OFFSET_SECONDS) * 1000)
         const month = String(local.getUTCMonth() + 1).padStart(2, '0')
         const day = String(local.getUTCDate()).padStart(2, '0')

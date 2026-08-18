@@ -80,6 +80,11 @@ function gmt8Start(date: string): number {
   return Math.floor(new Date(`${date}T00:00:00+08:00`).getTime() / 1000)
 }
 
+/** Treat non-finite token counts as zero so NaN never poisons aggregations. */
+function safeNumber(value: number | undefined): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
 /** Wait for a promise but resolve `undefined` after a timeout. */
 async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -208,10 +213,10 @@ function foldSessionEvents(
       t: Math.floor(event.time / 1000),
       provider: currentProvider,
       model: currentModel,
-      inputTokens: usage.inputTokens ?? 0,
-      outputTokens: usage.outputTokens ?? 0,
-      cacheReadTokens: usage.cacheReadTokens ?? 0,
-      cacheWriteTokens: usage.cacheWriteTokens ?? 0,
+      inputTokens: safeNumber(usage.inputTokens),
+      outputTokens: safeNumber(usage.outputTokens),
+      cacheReadTokens: safeNumber(usage.cacheReadTokens),
+      cacheWriteTokens: safeNumber(usage.cacheWriteTokens),
       requests: 1,
     }
     newSamples.push(sample)
