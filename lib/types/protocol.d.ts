@@ -77,5 +77,29 @@ export interface PlatformSnapshot {
     error?: string;
     fetched_at: string;
 }
+/** One point in a model usage trend series. */
+export interface ModelUsagePoint {
+    /** Human-readable bucket label, e.g. `08-17 14:00` or `08-17`. */
+    label: string;
+    /** Bucket start epoch seconds (UTC). */
+    timestamp: number;
+    /** Tokens consumed in the bucket. */
+    tokens: number;
+    /** API requests in the bucket. */
+    requests: number;
+}
+/** One model's usage trend series. */
+export interface ModelUsageSeries {
+    model: string;
+    points: ModelUsagePoint[];
+}
+/** Response served by `/api/deepseek-usage/model-usage`. */
+export interface ModelUsageResponse {
+    start: string;
+    end: string;
+    granularity: 'hour' | 'day';
+    series: ModelUsageSeries[];
+    error?: string;
+}
 /** Backwards-compatible alias used by older consumers. */
 export type UsageState = PlatformSnapshot;

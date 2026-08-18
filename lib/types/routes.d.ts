@@ -4,7 +4,7 @@
  * @module dsh-deepseek-usage/routes
  */
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver';
-import type { UsageState } from './protocol.js';
+import type { ModelUsageResponse, UsageState } from './protocol.js';
 /** Dependencies the routes need from the plugin host. */
 export interface UsageRoutesDeps {
     /** Build the latest state snapshot. */
@@ -26,6 +26,8 @@ export interface UsageRoutesDeps {
         ok: boolean;
         message?: string;
     };
+    /** Fetch per-model usage buckets for a date range. */
+    getModelUsage(start: string, end: string, granularity: 'hour' | 'day'): Promise<ModelUsageResponse>;
 }
 /** Build the route family. */
 export declare function makeUsageRoutes(deps: UsageRoutesDeps): WebRoute[];

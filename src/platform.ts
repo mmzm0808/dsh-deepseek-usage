@@ -6,7 +6,7 @@
  * @module dsh-deepseek-usage/platform
  */
 
-import type { ModelPriceRatio, PlatformSnapshot, PriceRatio } from './protocol.js'
+import type { ModelPriceRatio, ModelUsageResponse, ModelUsageSeries, PlatformSnapshot, PriceRatio } from './protocol.js'
 
 const BASE = 'https://platform.deepseek.com'
 const TZ_OFFSET_SECONDS = 28_800
@@ -157,6 +157,112 @@ export function todayRange(): { start: number; end: number } {
   const date = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })
   const start = gmt8Start(date)
   return { start, end: start + 86_400 }
+}
+
+/** Format a GMT+8 date string from an epoch second. */
+function formatDate(epochSeconds: number): string {
+  return new Date((epochSeconds + TZ_OFFSET_SECONDS) * 1000).toISOString().slice(0, 10)
+}
+
+/** List every GMT+8 calendar date in an inclusive range. */
+function eachDay(startDate: string, endDate: string): string[] {
+  const days: string[] = []
+  let cursor = gmt8Start(startDate)
+  const end = gmt8Start(endDate)
+  while (cursor <= end) {
+    days.push(formatDate(cursor))
+    cursor += 86_400
+  }
+  return days
+}
+
+/**
+ * Fetch per-model usage buckets for an inclusive date range. Hour mode queries
+ * each calendar day separately so the platform returns hourly buckets even for
+ * multi-day ranges; day mode queries the whole range at once.
+ */
+export async function fetchModelUsageSeries(
+  token: string,
+  startDate: string,
+  endDate: string,
+  granularity: 'hour' | 'day',
+): Promise<ModelUsageResponse> {
+  const start = gmt8Start(startDate)
+  const end = gmt8Start(endDate) + 86_400
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    throw new Error('日期范围无效')
+  }
+  const days = (end - start) / 86_400
+  if (days > 31) {
+    throw new Error('日期范围不能超过 31 天')
+  }
+
+  const amountPayloads = granularity === 'hour'
+    ? await Promise.all(eachDay(startDate, endDate).map(day => getPlatform<AmountPayload>(
+      `/api/v0/usage/by_api_key/amount?start=${gmt8Start(day)}&end=${gmt8Start(day) + 86_400}&tz=${TZ_OFFSET_SECONDS}`,
+      token,
+    )))
+    : [await getPlatform<AmountPayload>(
+      `/api/v0/usage/by_api_key/amount?start=${start}&end=${end}&tz=${TZ_OFFSET_SECONDS}`,
+      token,
+    )]
+
+  const bucketsByModel = new Map<string, Map<number, { tokens: number; requests: number; label: string }>>()
+
+  const ingest = (amount: AmountPayload): void => {
+    for (const series of amount.series ?? []) {
+      const model = series.model ?? 'unknown'
+      let buckets = bucketsByModel.get(model)
+      if (!buckets) {
+        buckets = new Map()
+        bucketsByModel.set(model, buckets)
+      }
+      for (const bucket of series.buckets ?? []) {
+        const time = bucket.time
+        const usage = bucket.usage
+        if (typeof time !== 'number' || !usage) continue
+        const tokens = (usage.RESPONSE_TOKEN ?? 0)
+          + (usage.PROMPT_CACHE_HIT_TOKEN ?? 0)
+          + (usage.PROMPT_CACHE_MISS_TOKEN ?? 0)
+        const requests = usage.REQUEST ?? 0
+        const local = new Date((time + TZ_OFFSET_SECONDS) * 1000)
+        const month = String(local.getUTCMonth() + 1).padStart(2, '0')
+        const day = String(local.getUTCDate()).padStart(2, '0')
+        const hour = String(local.getUTCHours()).padStart(2, '0')
+        const key = granularity === 'hour'
+          ? Math.floor((time + TZ_OFFSET_SECONDS) / 3600)
+          : Math.floor((time + TZ_OFFSET_SECONDS) / 86_400)
+        const label = granularity === 'hour' ? `${month}-${day} ${hour}:00` : `${month}-${day}`
+        const entry = buckets.get(key) ?? { tokens: 0, requests: 0, label }
+        entry.tokens += tokens
+        entry.requests += requests
+        buckets.set(key, entry)
+      }
+    }
+  }
+
+  for (const payload of amountPayloads) ingest(payload)
+
+  const series: ModelUsageSeries[] = []
+  for (const [model, buckets] of bucketsByModel) {
+    const points = [...buckets.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([key, value]) => ({
+        timestamp: key * (granularity === 'hour' ? 3600 : 86_400) - TZ_OFFSET_SECONDS,
+        label: value.label,
+        tokens: value.tokens,
+        requests: value.requests,
+      }))
+    series.push({ model, points })
+  }
+
+  series.sort((a, b) => {
+    const totalA = a.points.reduce((sum, point) => sum + point.tokens, 0)
+    const totalB = b.points.reduce((sum, point) => sum + point.tokens, 0)
+    return totalB - totalA
+  })
+
+  return { start: startDate, end: endDate, granularity, series }
 }
 
 /** Build one model's R0 pair from historical/since/today aggregates. */

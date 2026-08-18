@@ -15,8 +15,8 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import z from 'schemastery'
 import { closePlatformLogin, readPlatformTokenFromBrowser, startPlatformLogin } from './login.js'
-import { fetchPlatformSnapshot } from './platform.js'
-import type { PlatformSnapshot } from './protocol.js'
+import { fetchModelUsageSeries, fetchPlatformSnapshot } from './platform.js'
+import type { ModelUsageResponse, PlatformSnapshot } from './protocol.js'
 import { makeUsageRoutes } from './routes.js'
 
 /** Stable cordis plugin name (matches cordis.patch.yml insert id). */
@@ -175,6 +175,18 @@ export function apply(ctx: AppContext, config: Config): void {
     }
   }
 
+  const getModelUsage = async (
+    start: string,
+    end: string,
+    granularity: 'hour' | 'day',
+  ): Promise<ModelUsageResponse> => {
+    const current = resolveUserToken(config)
+    if (!current) {
+      return { start, end, granularity, series: [], error: '未登录 DeepSeek 开放平台，请先登录' }
+    }
+    return fetchModelUsageSeries(current, start, end, granularity)
+  }
+
   const disposers: Array<() => void> = []
 
   disposers.push(ctx.effect(
@@ -185,6 +197,7 @@ export function apply(ctx: AppContext, config: Config): void {
         startLogin,
         checkLogin,
         logout,
+        getModelUsage,
       }).map(route => ctx.webServer.register(route))
       return () => { for (const dispose of routeDisposers) dispose() }
     },

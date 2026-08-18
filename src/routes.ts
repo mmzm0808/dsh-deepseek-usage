@@ -6,7 +6,7 @@
 
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
-import type { UsageState } from './protocol.js'
+import type { ModelUsageResponse, UsageState } from './protocol.js'
 
 /** Dependencies the routes need from the plugin host. */
 export interface UsageRoutesDeps {
@@ -20,6 +20,8 @@ export interface UsageRoutesDeps {
   checkLogin(): Promise<{ loggedIn: boolean; message?: string }>
   /** Clear stored userToken and reset to logged-out state. */
   logout(): { ok: boolean; message?: string }
+  /** Fetch per-model usage buckets for a date range. */
+  getModelUsage(start: string, end: string, granularity: 'hour' | 'day'): Promise<ModelUsageResponse>
 }
 
 /** Cap on JSON request bodies. */
@@ -122,5 +124,26 @@ export function makeUsageRoutes(deps: UsageRoutesDeps): WebRoute[] {
     },
   }
 
-  return [state, refresh, loginStart, loginStatus, logout]
+  const modelUsage: WebRoute = {
+    kind: 'exact',
+    path: '/api/deepseek-usage/model-usage',
+    handler: async (req, res) => {
+      if (!guard(req, res, 'GET')) return
+      try {
+        const url = new URL(req.url ?? '/', 'http://localhost')
+        const start = url.searchParams.get('start') ?? ''
+        const end = url.searchParams.get('end') ?? ''
+        const granularity = url.searchParams.get('granularity') === 'day' ? 'day' : 'hour'
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+          writeJson(res, 400, { error: 'start/end must be YYYY-MM-DD' })
+          return
+        }
+        writeJson(res, 200, await deps.getModelUsage(start, end, granularity))
+      } catch (error) {
+        writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
+      }
+    },
+  }
+
+  return [state, refresh, loginStart, loginStatus, logout, modelUsage]
 }
