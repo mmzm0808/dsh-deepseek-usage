@@ -207,7 +207,15 @@ export async function fetchModelUsageSeries(
       token,
     )]
 
-  const bucketsByModel = new Map<string, Map<number, { tokens: number; requests: number; label: string }>>()
+  const bucketsByModel = new Map<string, Map<number, {
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens: number
+    cacheWriteTokens: number
+    tokens: number
+    requests: number
+    label: string
+  }>>()
 
   const ingest = (amount: AmountPayload): void => {
     for (const series of amount.series ?? []) {
@@ -221,9 +229,11 @@ export async function fetchModelUsageSeries(
         const time = bucket.time
         const usage = bucket.usage
         if (typeof time !== 'number' || !usage) continue
-        const tokens = (usage.RESPONSE_TOKEN ?? 0)
-          + (usage.PROMPT_CACHE_HIT_TOKEN ?? 0)
-          + (usage.PROMPT_CACHE_MISS_TOKEN ?? 0)
+        const inputTokens = usage.PROMPT_CACHE_MISS_TOKEN ?? 0
+        const outputTokens = usage.RESPONSE_TOKEN ?? 0
+        const cacheReadTokens = usage.PROMPT_CACHE_HIT_TOKEN ?? 0
+        const cacheWriteTokens = 0
+        const tokens = inputTokens + outputTokens + cacheReadTokens + cacheWriteTokens
         const requests = usage.REQUEST ?? 0
         const local = new Date((time + TZ_OFFSET_SECONDS) * 1000)
         const month = String(local.getUTCMonth() + 1).padStart(2, '0')
@@ -233,7 +243,19 @@ export async function fetchModelUsageSeries(
           ? Math.floor((time + TZ_OFFSET_SECONDS) / 3600)
           : Math.floor((time + TZ_OFFSET_SECONDS) / 86_400)
         const label = granularity === 'hour' ? `${month}-${day} ${hour}:00` : `${month}-${day}`
-        const entry = buckets.get(key) ?? { tokens: 0, requests: 0, label }
+        const entry = buckets.get(key) ?? {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          tokens: 0,
+          requests: 0,
+          label,
+        }
+        entry.inputTokens += inputTokens
+        entry.outputTokens += outputTokens
+        entry.cacheReadTokens += cacheReadTokens
+        entry.cacheWriteTokens += cacheWriteTokens
         entry.tokens += tokens
         entry.requests += requests
         buckets.set(key, entry)
@@ -251,9 +273,13 @@ export async function fetchModelUsageSeries(
         timestamp: key * (granularity === 'hour' ? 3600 : 86_400) - TZ_OFFSET_SECONDS,
         label: value.label,
         tokens: value.tokens,
+        inputTokens: value.inputTokens,
+        outputTokens: value.outputTokens,
+        cacheReadTokens: value.cacheReadTokens,
+        cacheWriteTokens: value.cacheWriteTokens,
         requests: value.requests,
       }))
-    series.push({ model, points })
+    series.push({ provider: 'deepseek', model, points })
   }
 
   series.sort((a, b) => {

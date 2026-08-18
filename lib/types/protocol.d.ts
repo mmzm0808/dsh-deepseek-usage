@@ -83,13 +83,23 @@ export interface ModelUsagePoint {
     label: string;
     /** Bucket start epoch seconds (UTC). */
     timestamp: number;
-    /** Tokens consumed in the bucket. */
+    /** Total tokens consumed in the bucket (uncached input + cache write + cache read + output). */
     tokens: number;
+    /** Uncached input tokens. */
+    inputTokens: number;
+    /** Output tokens. */
+    outputTokens: number;
+    /** Cache-read (cache hit) tokens. */
+    cacheReadTokens: number;
+    /** Cache-write tokens. */
+    cacheWriteTokens: number;
     /** API requests in the bucket. */
     requests: number;
 }
 /** One model's usage trend series. */
 export interface ModelUsageSeries {
+    /** Registered provider route the model belongs to. */
+    provider: string;
     model: string;
     points: ModelUsagePoint[];
 }

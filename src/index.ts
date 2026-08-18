@@ -15,15 +15,16 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import z from 'schemastery'
 import { closePlatformLogin, readPlatformTokenFromBrowser, startPlatformLogin } from './login.js'
-import { fetchModelUsageSeries, fetchPlatformSnapshot } from './platform.js'
+import { fetchPlatformSnapshot } from './platform.js'
 import type { ModelUsageResponse, PlatformSnapshot } from './protocol.js'
 import { makeUsageRoutes } from './routes.js'
+import { fetchSessionModelUsageSeries, type SessionPersistenceLike } from './session-usage.js'
 
 /** Stable cordis plugin name (matches cordis.patch.yml insert id). */
 export const name = 'deepseek-usage'
 
 /** Services required before routes can mount. */
-export const inject = ['webServer']
+export const inject = ['webServer', 'sessionPersistence']
 
 /** Plugin config. */
 export interface Config {
@@ -40,6 +41,7 @@ export const Config: z<Config> = z.object({
 
 type AppContext = Context & {
   webServer: WebServer
+  sessionPersistence: SessionPersistenceLike
 }
 
 /** Plugin config file path under the dsh home. */
@@ -180,11 +182,7 @@ export function apply(ctx: AppContext, config: Config): void {
     end: string,
     granularity: 'hour' | 'day',
   ): Promise<ModelUsageResponse> => {
-    const current = resolveUserToken(config)
-    if (!current) {
-      return { start, end, granularity, series: [], error: '未登录 DeepSeek 开放平台，请先登录' }
-    }
-    return fetchModelUsageSeries(current, start, end, granularity)
+    return fetchSessionModelUsageSeries(ctx.sessionPersistence, start, end, granularity)
   }
 
   const disposers: Array<() => void> = []
