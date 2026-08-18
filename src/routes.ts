@@ -22,6 +22,13 @@ export interface UsageRoutesDeps {
   logout(): { ok: boolean; message?: string }
   /** Fetch per-model usage buckets for a date range. */
   getModelUsage(start: string, end: string, granularity: 'hour' | 'day'): Promise<ModelUsageResponse>
+  /** Fetch per-model usage buckets and emit progressive snapshots while scanning. */
+  streamModelUsage(
+    start: string,
+    end: string,
+    granularity: 'hour' | 'day',
+    onSnapshot: (series: ModelUsageResponse['series']) => void,
+  ): Promise<ModelUsageResponse>
 }
 
 /** Cap on JSON request bodies. */
@@ -145,5 +152,41 @@ export function makeUsageRoutes(deps: UsageRoutesDeps): WebRoute[] {
     },
   }
 
-  return [state, refresh, loginStart, loginStatus, logout, modelUsage]
+  const modelUsageStream: WebRoute = {
+    kind: 'exact',
+    path: '/api/deepseek-usage/model-usage/stream',
+    handler: async (req, res) => {
+      if (!guard(req, res, 'GET')) return
+      try {
+        const url = new URL(req.url ?? '/', 'http://localhost')
+        const start = url.searchParams.get('start') ?? ''
+        const end = url.searchParams.get('end') ?? ''
+        const granularity = url.searchParams.get('granularity') === 'day' ? 'day' : 'hour'
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+          writeJson(res, 400, { error: 'start/end must be YYYY-MM-DD' })
+          return
+        }
+        res.writeHead(200, {
+          'content-type': 'application/x-ndjson; charset=utf-8',
+          'cache-control': 'no-store',
+          'transfer-encoding': 'chunked',
+        })
+        const writeSnapshot = (series: ModelUsageResponse['series']): void => {
+          res.write(`${JSON.stringify({ type: 'snapshot', series })}\n`)
+        }
+        const result = await deps.streamModelUsage(start, end, granularity, writeSnapshot)
+        res.end(`${JSON.stringify({ type: 'done', result })}\n`)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        if (!res.headersSent) {
+          writeJson(res, 500, { error: message })
+        } else {
+          res.write(`${JSON.stringify({ type: 'error', error: message })}\n`)
+          res.end()
+        }
+      }
+    },
+  }
+
+  return [state, refresh, loginStart, loginStatus, logout, modelUsage, modelUsageStream]
 }

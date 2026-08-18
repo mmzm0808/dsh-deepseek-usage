@@ -224,6 +224,13 @@ function foldSessionEvents(
   }
 }
 
+/** Normalize vision-toolkit providers into their base display provider. */
+function normalizeProvider(provider: string): { provider: string; source: string } {
+  const match = /^vision-toolkit-(.+)$/.exec(provider)
+  if (match?.[1]) return { provider: match[1], source: provider }
+  return { provider, source: provider }
+}
+
 /** Build the final provider/model series from the aggregate map. */
 function buildSeries(byProviderModel: Map<string, ModelAggregate>): ModelUsageSeries[] {
   const series: ModelUsageSeries[] = []
@@ -242,11 +249,18 @@ function buildSeries(byProviderModel: Map<string, ModelAggregate>): ModelUsageSe
       }))
     const totalTokens = points.reduce((sum, point) => sum + point.tokens, 0)
     if (totalTokens <= 0) continue
-    series.push({ provider: aggregate.provider, model: aggregate.model, points })
+    const normalized = normalizeProvider(aggregate.provider)
+    series.push({
+      provider: normalized.provider,
+      source: normalized.source,
+      model: aggregate.model,
+      points,
+    })
   }
 
   series.sort((a, b) => {
     if (a.provider !== b.provider) return a.provider.localeCompare(b.provider)
+    if (a.model !== b.model) return a.model.localeCompare(b.model)
     const totalA = a.points.reduce((sum, point) => sum + point.tokens, 0)
     const totalB = b.points.reduce((sum, point) => sum + point.tokens, 0)
     return totalB - totalA
@@ -264,6 +278,8 @@ function buildSeries(byProviderModel: Map<string, ModelAggregate>): ModelUsageSe
  * @param startDate - inclusive GMT+8 start date, `YYYY-MM-DD`.
  * @param endDate - inclusive GMT+8 end date, `YYYY-MM-DD`.
  * @param granularity - `hour` for hourly buckets, `day` for daily buckets.
+ * @param onSnapshot - optional callback invoked with the current best-known
+ *   series after each batch of scanned history, for progressive rendering.
  * @returns model usage series grouped by provider/model.
  */
 export async function fetchSessionModelUsageSeries(
@@ -273,6 +289,7 @@ export async function fetchSessionModelUsageSeries(
   startDate: string,
   endDate: string,
   granularity: 'hour' | 'day',
+  onSnapshot?: (series: ModelUsageSeries[]) => void,
 ): Promise<ModelUsageResponse> {
   const start = gmt8Start(startDate)
   const end = gmt8Start(endDate) + 86_400
@@ -293,6 +310,7 @@ export async function fetchSessionModelUsageSeries(
       foldSample(sample, byProviderModel, start, end, granularity)
     }
   }
+  if (onSnapshot) onSnapshot(buildSeries(byProviderModel))
 
   let cacheDirty = false
 
@@ -314,6 +332,7 @@ export async function fetchSessionModelUsageSeries(
       cacheDirty = true
     }
     cache.sessions[session.id] = entry
+    if (onSnapshot) onSnapshot(buildSeries(byProviderModel))
   }
 
   // Persisted non-live sessions: skip when the stored revision is unchanged.
@@ -345,6 +364,7 @@ export async function fetchSessionModelUsageSeries(
         nextEntry.revision = snapshot.revision
         cache.sessions[id] = nextEntry
         cacheDirty = true
+        if (onSnapshot) onSnapshot(buildSeries(byProviderModel))
       } catch {
         // A corrupt or unreadable session must not break the whole trend page.
       }

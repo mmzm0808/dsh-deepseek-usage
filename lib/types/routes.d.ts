@@ -28,6 +28,8 @@ export interface UsageRoutesDeps {
     };
     /** Fetch per-model usage buckets for a date range. */
     getModelUsage(start: string, end: string, granularity: 'hour' | 'day'): Promise<ModelUsageResponse>;
+    /** Fetch per-model usage buckets and emit progressive snapshots while scanning. */
+    streamModelUsage(start: string, end: string, granularity: 'hour' | 'day', onSnapshot: (series: ModelUsageResponse['series']) => void): Promise<ModelUsageResponse>;
 }
 /** Build the route family. */
 export declare function makeUsageRoutes(deps: UsageRoutesDeps): WebRoute[];

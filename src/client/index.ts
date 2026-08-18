@@ -144,6 +144,13 @@ function shortModelName(model: string): string {
   return model
 }
 
+/** Human-readable label for a usage source (e.g. vision-toolkit-b-ai -> 视觉 b-ai). */
+function sourceLabel(source: string | undefined): string {
+  if (!source) return '直接'
+  const match = /^vision-toolkit-(.+)$/.exec(source)
+  return match ? `视觉 ${match[1]}` : source
+}
+
 /** Format a number as mantissa × 10^exponent with three significant digits. */
 function toScientific(value: number): string {
   if (value === 0 || !Number.isFinite(value)) return String(value)
@@ -256,6 +263,7 @@ function fillModelSeries(
   return {
     provider: series.provider,
     model: series.model,
+    source: series.source,
     points: expected.map(item => {
       const existing = byTimestamp.get(item.timestamp)
       return {
@@ -672,11 +680,40 @@ export function apply(ctx: ClientContext): void {
     trendEndDate = end
     stateFields.trendList.innerHTML = `<div class="${NS}-trend-loading">加载模型用量趋势…</div>`
     try {
-      const url = `/api/deepseek-usage/model-usage?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&granularity=${trendGranularity}`
+      const url = `/api/deepseek-usage/model-usage/stream?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&granularity=${trendGranularity}`
       const response = await fetch(url)
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      trendData = await response.json() as ModelUsageResponse
-      renderTrends()
+      if (!response.body) throw new Error('浏览器不支持流式读取')
+      const reader = response.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        let newlineIndex = buffer.indexOf('\n')
+        while (newlineIndex >= 0) {
+          const line = buffer.slice(0, newlineIndex).trim()
+          buffer = buffer.slice(newlineIndex + 1)
+          newlineIndex = buffer.indexOf('\n')
+          if (!line) continue
+          const message = JSON.parse(line) as {
+            type?: string
+            series?: ModelUsageSeries[]
+            result?: ModelUsageResponse
+            error?: string
+          }
+          if (message.type === 'snapshot' && message.series) {
+            trendData = { start, end, granularity: trendGranularity, series: message.series }
+            renderTrends()
+          } else if (message.type === 'done' && message.result) {
+            trendData = message.result
+            renderTrends()
+          } else if (message.type === 'error') {
+            stateFields.trendList.innerHTML = `<div class="${NS}-trend-error">${escapeHtml(message.error ?? '加载失败')}</div>`
+          }
+        }
+      }
     } catch (error) {
       stateFields.trendList.innerHTML = `<div class="${NS}-trend-error">${escapeHtml(error instanceof Error ? error.message : String(error))}</div>`
     }
@@ -696,48 +733,91 @@ export function apply(ctx: ClientContext): void {
 
     const filled = data.series.map(series => fillModelSeries(series, data.start, data.end, data.granularity))
     const palette = ['#4d6bfe', '#34d399', '#fbbf24', '#f87171', '#a78bfa', '#22d3ee', '#fb923c', '#f472b6', '#a3e635', '#60a5fa']
-    const groups = new Map<string, ModelUsageSeries[]>()
+    const groups = new Map<string, Map<string, ModelUsageSeries[]>>()
     for (const series of filled) {
-      const list = groups.get(series.provider) ?? []
+      let models = groups.get(series.provider)
+      if (!models) {
+        models = new Map()
+        groups.set(series.provider, models)
+      }
+      const list = models.get(series.model) ?? []
       list.push(series)
-      groups.set(series.provider, list)
+      models.set(series.model, list)
     }
     let colorIndex = 0
     let html = ''
-    for (const [provider, seriesList] of groups) {
+    for (const [provider, models] of groups) {
       html += `<div class="${NS}-trend-group">`
       html += `<div class="${NS}-trend-provider">${escapeHtml(provider)}</div>`
-      html += seriesList.map(series => renderTrendChart(series, palette[colorIndex++ % palette.length])).join('')
+      for (const seriesList of models.values()) {
+        html += renderTrendChart(seriesList, palette[colorIndex++ % palette.length])
+      }
       html += '</div>'
     }
     stateFields.trendList.innerHTML = html || `<div class="${NS}-trend-empty">所选范围内暂无模型用量数据</div>`
     bindTrendInteractions()
   }
 
-  const renderTrendChart = (series: ModelUsageSeries, color: string): string => {
-    const points = series.points
-    if (points.length === 0) return ''
+  const renderTrendChart = (seriesList: ModelUsageSeries[], color: string): string => {
+    const points = seriesList[0]?.points ?? []
+    if (points.length === 0 || seriesList.length === 0) return ''
     const width = 600
     const height = 180
     const margin = { top: 12, right: 16, bottom: 26, left: 44 }
     const plotWidth = width - margin.left - margin.right
     const plotHeight = height - margin.top - margin.bottom
-    const maxTokens = Math.max(...points.map(point => point.tokens), 1)
+    const maxTokens = Math.max(...seriesList.flatMap(series => series.points.map(point => point.tokens)), 1)
     const x = (index: number): number => points.length === 1
       ? margin.left + plotWidth / 2
       : margin.left + (plotWidth * index) / (points.length - 1)
     const y = (value: number): number => margin.top + plotHeight - (plotHeight * Math.min(value, maxTokens)) / maxTokens
-    const line = points.map((point, index) => `${index === 0 ? 'M' : 'L'}${x(index).toFixed(1)},${y(point.tokens).toFixed(1)}`).join(' ')
-    const area = `${line} L${x(points.length - 1).toFixed(1)},${margin.top + plotHeight} L${x(0).toFixed(1)},${margin.top + plotHeight} Z`
 
-    const total = points.reduce((sum, point) => sum + point.tokens, 0)
-    const totalInput = points.reduce((sum, point) => sum + point.inputTokens + point.cacheReadTokens + point.cacheWriteTokens, 0)
-    const totalCacheRead = points.reduce((sum, point) => sum + point.cacheReadTokens, 0)
-    const totalHitRate = totalInput > 0 ? totalCacheRead / totalInput * 100 : 0
-    const pointHitRate = (point: ModelUsageSeries['points'][number]): number => {
-      const input = point.inputTokens + point.cacheReadTokens + point.cacheWriteTokens
-      return input > 0 ? point.cacheReadTokens / input * 100 : 0
+    const sourceColors = seriesList.map((_, index) => {
+      if (seriesList.length === 1) return color
+      if (index === 0) return color
+      return ['#f87171', '#34d399', '#fbbf24', '#a78bfa', '#22d3ee'][index - 1] ?? `hsl(${(index * 47) % 360} 70% 60%)`
+    })
+    const rendered = seriesList.map((series, seriesIndex) => {
+      const lineColor = sourceColors[seriesIndex]!
+      const line = series.points.map((point, index) => `${index === 0 ? 'M' : 'L'}${x(index).toFixed(1)},${y(point.tokens).toFixed(1)}`).join(' ')
+      const area = `${line} L${x(points.length - 1).toFixed(1)},${margin.top + plotHeight} L${x(0).toFixed(1)},${margin.top + plotHeight} Z`
+      const pointHitRate = (point: ModelUsageSeries['points'][number]): number => {
+        const input = point.inputTokens + point.cacheReadTokens + point.cacheWriteTokens
+        return input > 0 ? point.cacheReadTokens / input * 100 : 0
+      }
+      const circles = series.points.map((point, index) => `
+        <circle cx="${x(index).toFixed(1)}" cy="${y(point.tokens).toFixed(1)}" r="3" fill="${lineColor}" stroke="var(--dsu-panel-2)" stroke-width="1.5"/>
+        <circle class="${NS}-point-hit" cx="${x(index).toFixed(1)}" cy="${y(point.tokens).toFixed(1)}" r="10" fill="transparent"
+          data-x="${x(index).toFixed(1)}"
+          data-source="${escapeHtml(series.source ?? series.provider)}"
+          data-label="${escapeHtml(point.label)}"
+          data-total="${point.tokens}"
+          data-input="${point.inputTokens}"
+          data-output="${point.outputTokens}"
+          data-cache-read="${point.cacheReadTokens}"
+          data-cache-write="${point.cacheWriteTokens}"
+          data-hit-rate="${pointHitRate(point).toFixed(1)}"/>
+      `).join('')
+      return { lineColor, area, line, circles }
+    })
+
+    let total = 0
+    let totalInput = 0
+    let totalCacheRead = 0
+    for (const series of seriesList) {
+      for (const point of series.points) {
+        total += point.tokens
+        totalInput += point.inputTokens + point.cacheReadTokens + point.cacheWriteTokens
+        totalCacheRead += point.cacheReadTokens
+      }
     }
+    const totalHitRate = totalInput > 0 ? totalCacheRead / totalInput * 100 : 0
+    const legend = seriesList.length > 1
+      ? `<span style="display:inline-flex;gap:10px;flex-wrap:wrap;">${seriesList.map((series, index) => `
+          <span style="display:inline-flex;align-items:center;gap:4px;color:var(--dsu-muted);font-size:11px;">
+            <i style="width:12px;height:2px;background:${sourceColors[index]};display:inline-block;flex:none;"></i>${escapeHtml(sourceLabel(series.source))}
+          </span>`).join('')}</span>`
+      : ''
 
     const ticks = 4
     const gridLines = Array.from({ length: ticks + 1 }, (_, index) => {
@@ -755,33 +835,25 @@ export function apply(ctx: ClientContext): void {
       ? `<text x="${x(index).toFixed(1)}" y="${height - 8}" text-anchor="middle" font-size="10" fill="var(--dsu-muted)">${escapeHtml(point.label)}</text>`
       : ''
     ).join('')
-    const circles = points.map((point, index) => `
-      <circle cx="${x(index).toFixed(1)}" cy="${y(point.tokens).toFixed(1)}" r="3" fill="${color}" stroke="var(--dsu-panel-2)" stroke-width="1.5"/>
-      <circle class="${NS}-point-hit" cx="${x(index).toFixed(1)}" cy="${y(point.tokens).toFixed(1)}" r="10" fill="transparent"
-        data-x="${x(index).toFixed(1)}"
-        data-label="${escapeHtml(point.label)}"
-        data-total="${point.tokens}"
-        data-input="${point.inputTokens}"
-        data-output="${point.outputTokens}"
-        data-cache-read="${point.cacheReadTokens}"
-        data-cache-write="${point.cacheWriteTokens}"
-        data-hit-rate="${pointHitRate(point).toFixed(1)}"/>
-    `).join('')
 
+    const model = seriesList[0]?.model ?? ''
     return `
       <div class="${NS}-chart-card">
         <div class="${NS}-chart-head">
-          <span class="${NS}-chart-title">${escapeHtml(series.model)}</span>
+          <span style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0;">
+            <span class="${NS}-chart-title">${escapeHtml(model)}</span>
+            ${legend}
+          </span>
           <span class="${NS}-chart-total">${compact(total)} Tokens · 命中率 ${totalHitRate.toFixed(1)}%</span>
         </div>
-        <svg class="${NS}-chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeHtml(series.model)} 用量趋势">
+        <svg class="${NS}-chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeHtml(model)} 用量趋势">
           ${gridLines}
           ${yLabels}
           ${xLabels}
           <line class="${NS}-hover-line" x1="0" y1="${margin.top}" x2="0" y2="${margin.top + plotHeight}" stroke="var(--dsu-muted)" stroke-width="1" stroke-dasharray="4 3" opacity="0" pointer-events="none"/>
-          <path d="${area}" fill="${color}" opacity="0.08"/>
-          <path d="${line}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
-          ${circles}
+          ${rendered.map(item => `<path d="${item.area}" fill="${item.lineColor}" opacity="0.08"/>`).join('')}
+          ${rendered.map(item => `<path d="${item.line}" fill="none" stroke="${item.lineColor}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`).join('')}
+          ${rendered.map(item => item.circles).join('')}
         </svg>
       </div>
     `
@@ -798,19 +870,28 @@ export function apply(ctx: ClientContext): void {
       line.setAttribute('opacity', '1')
     }
     const label = circle.getAttribute('data-label') ?? ''
-    const input = Number(circle.getAttribute('data-input') ?? 0)
-    const output = Number(circle.getAttribute('data-output') ?? 0)
-    const cacheRead = Number(circle.getAttribute('data-cache-read') ?? 0)
-    const cacheWrite = Number(circle.getAttribute('data-cache-write') ?? 0)
-    const hitRate = Number(circle.getAttribute('data-hit-rate') ?? 0)
-    stateFields.tooltip.innerHTML = `
-      <div style="font-weight:600;margin-bottom:6px;">${escapeHtml(label)}</div>
-      <div>输入 ${compact(input)}</div>
-      <div>输出 ${compact(output)}</div>
-      <div>缓存命中 ${compact(cacheRead)}</div>
-      <div>缓存未命中 ${compact(cacheWrite)}</div>
-      <div>命中率 ${hitRate.toFixed(1)}%</div>
-    `
+    const circles = svg
+      ? Array.from(svg.querySelectorAll(`.${NS}-point-hit`)).filter(item => item.getAttribute('data-x') === x)
+      : [circle]
+    const rows = circles.map(item => {
+      const source = item.getAttribute('data-source') ?? ''
+      const input = Number(item.getAttribute('data-input') ?? 0)
+      const output = Number(item.getAttribute('data-output') ?? 0)
+      const cacheRead = Number(item.getAttribute('data-cache-read') ?? 0)
+      const cacheWrite = Number(item.getAttribute('data-cache-write') ?? 0)
+      const hitRate = Number(item.getAttribute('data-hit-rate') ?? 0)
+      return `
+        <div style="margin-top:8px;padding-top:6px;border-top:1px solid var(--dsu-border);">
+          <div style="font-weight:600;margin-bottom:4px;">${escapeHtml(sourceLabel(source))}</div>
+          <div>输入 ${compact(input)}</div>
+          <div>输出 ${compact(output)}</div>
+          <div>缓存命中 ${compact(cacheRead)}</div>
+          <div>缓存未命中 ${compact(cacheWrite)}</div>
+          <div>命中率 ${hitRate.toFixed(1)}%</div>
+        </div>
+      `
+    }).join('')
+    stateFields.tooltip.innerHTML = `<div style="font-weight:600;margin-bottom:6px;">${escapeHtml(label)}</div>${rows}`
     const left = Math.max(8, Math.min(rect.left + rect.width / 2, window.innerWidth - 380))
     const top = Math.max(8, rect.top - 10)
     stateFields.tooltip.style.left = `${left}px`

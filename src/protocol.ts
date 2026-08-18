@@ -106,8 +106,10 @@ export interface ModelUsagePoint {
 
 /** One model's usage trend series. */
 export interface ModelUsageSeries {
-  /** Registered provider route the model belongs to. */
+  /** Display provider group the model belongs to (vision-toolkit-X is normalized to X). */
   provider: string
+  /** Original provider/source when merged into a display group. */
+  source?: string
   model: string
   points: ModelUsagePoint[]
 }

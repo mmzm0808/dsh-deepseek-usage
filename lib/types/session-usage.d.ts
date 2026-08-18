@@ -5,7 +5,7 @@
  * are cached in a JSON file so already-read history loads quickly on later runs.
  * @module dsh-deepseek-usage/session-usage
  */
-import type { ModelUsageResponse } from './protocol.js';
+import type { ModelUsageResponse, ModelUsageSeries } from './protocol.js';
 /** Minimal structural face of a live DSH session. */
 export interface SessionLike {
     id: string;
@@ -56,6 +56,8 @@ export interface SessionEventLike {
  * @param startDate - inclusive GMT+8 start date, `YYYY-MM-DD`.
  * @param endDate - inclusive GMT+8 end date, `YYYY-MM-DD`.
  * @param granularity - `hour` for hourly buckets, `day` for daily buckets.
+ * @param onSnapshot - optional callback invoked with the current best-known
+ *   series after each batch of scanned history, for progressive rendering.
  * @returns model usage series grouped by provider/model.
  */
-export declare function fetchSessionModelUsageSeries(persistence: SessionPersistenceLike, sessions: SessionsLike, cacheFile: string, startDate: string, endDate: string, granularity: 'hour' | 'day'): Promise<ModelUsageResponse>;
+export declare function fetchSessionModelUsageSeries(persistence: SessionPersistenceLike, sessions: SessionsLike, cacheFile: string, startDate: string, endDate: string, granularity: 'hour' | 'day', onSnapshot?: (series: ModelUsageSeries[]) => void): Promise<ModelUsageResponse>;

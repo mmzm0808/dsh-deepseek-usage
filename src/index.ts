@@ -208,6 +208,23 @@ export function apply(ctx: AppContext, config: Config): void {
     return data
   }
 
+  const streamModelUsage = async (
+    start: string,
+    end: string,
+    granularity: 'hour' | 'day',
+    onSnapshot: (series: ModelUsageResponse['series']) => void,
+  ): Promise<ModelUsageResponse> => {
+    return fetchSessionModelUsageSeries(
+      ctx.sessionPersistence,
+      ctx.sessions,
+      modelUsageCachePath(),
+      start,
+      end,
+      granularity,
+      onSnapshot,
+    )
+  }
+
   const disposers: Array<() => void> = []
 
   disposers.push(ctx.effect(
@@ -219,6 +236,7 @@ export function apply(ctx: AppContext, config: Config): void {
         checkLogin,
         logout,
         getModelUsage,
+        streamModelUsage,
       }).map(route => ctx.webServer.register(route))
       return () => { for (const dispose of routeDisposers) dispose() }
     },
