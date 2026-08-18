@@ -144,16 +144,18 @@ function shortModelName(model: string): string {
   return model
 }
 
-/** Human-readable label for a usage source (e.g. vision-toolkit-b-ai -> 视觉 b-ai). */
+/** Human-readable label for a usage source (e.g. vision-toolkit-b-ai -> 视觉 b-ai, modlens-b-ai -> 视觉 modlens). */
 function sourceLabel(source: string | undefined): string {
   if (!source) return '直接'
-  const match = /^vision-toolkit-(.+)$/.exec(source)
-  return match ? `视觉 ${match[1]}` : source
+  const visionMatch = /^vision-toolkit-(.+)$/.exec(source)
+  if (visionMatch?.[1]) return `视觉 ${visionMatch[1]}`
+  if (/^modlens-/.test(source) || source === 'deepseek-modlens') return '视觉 modlens'
+  return source
 }
 
-/** Whether a source is a vision-toolkit source. */
+/** Whether a source is a vision bridge source (vision-toolkit / modlens). */
 function isVisionSource(source: string | undefined): boolean {
-  return /^vision-toolkit-/.test(source ?? '')
+  return /^(?:vision-toolkit|modlens)-/.test(source ?? '') || source === 'deepseek-modlens'
 }
 
 /** Parse a hex color into RGB components. */
@@ -850,7 +852,7 @@ export function apply(ctx: ClientContext): void {
       }
     }
     const totalHitRate = totalInput > 0 ? totalCacheRead / totalInput * 100 : 0
-    const hasToolkitSource = seriesList.some(series => /^vision-toolkit-/.test(series.source ?? ''))
+    const hasToolkitSource = seriesList.some(series => isVisionSource(series.source))
     const legend = seriesList.length > 1 || hasToolkitSource
       ? `<span style="display:inline-flex;gap:10px;flex-wrap:wrap;">${seriesList.map((series, index) => `
           <span style="display:inline-flex;align-items:center;gap:4px;color:var(--dsu-muted);font-size:11px;">

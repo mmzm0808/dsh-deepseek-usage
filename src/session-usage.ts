@@ -224,10 +224,11 @@ function foldSessionEvents(
   }
 }
 
-/** Normalize vision-toolkit providers into their base display provider. */
+/** Normalize vision bridge providers (vision-toolkit / modlens) into their base display provider. */
 function normalizeProvider(provider: string): { provider: string; source: string } {
-  const match = /^vision-toolkit-(.+)$/.exec(provider)
+  const match = /^(?:vision-toolkit|modlens)-(.+)$/.exec(provider)
   if (match?.[1]) return { provider: match[1], source: provider }
+  if (provider === 'deepseek-modlens') return { provider: 'deepseek-official', source: provider }
   return { provider, source: provider }
 }
 
