@@ -45,21 +45,43 @@ type AppContext = Context & {
   sessionPersistence: SessionPersistenceLike
 }
 
-/** Plugin config file path under the dsh home. */
-function pluginConfigPath(): string {
-  const home = process.env.DSH_HOME ?? join(homedir(), '.dsh')
-  return join(home, 'dsh-deepseek-usage', 'config.json')
+/** Minimal face of the Desktop profile service; only used when present. */
+interface DesktopProfilesLike {
+  current: { name: string; dir: string }
+}
+
+/** Default DSH home directory. */
+function defaultDshHome(): string {
+  return process.env.DSH_HOME ?? join(homedir(), '.dsh')
+}
+
+/** Resolve plugin data directory: Desktop profile dir when available, otherwise DSH home. */
+function resolveDataDir(ctx: AppContext): string {
+  const desktop = (ctx as unknown as { get?: (key: string) => unknown }).get?.('desktopProfiles') as DesktopProfilesLike | undefined
+  const dir = desktop?.current?.dir
+  return typeof dir === 'string' && dir.length > 0 ? dir : defaultDshHome()
+}
+
+/** Plugin config file path under a data directory. */
+function pluginConfigPath(dataDir = defaultDshHome()): string {
+  return join(dataDir, 'dsh-deepseek-usage', 'config.json')
 }
 
 /** JSON cache file for extracted local model usage history. */
-function modelUsageCachePath(): string {
-  const home = process.env.DSH_HOME ?? join(homedir(), '.dsh')
-  return join(home, 'dsh-deepseek-usage', 'model-usage-cache.json')
+function modelUsageCachePath(dataDir = defaultDshHome()): string {
+  return join(dataDir, 'dsh-deepseek-usage', 'model-usage-cache.json')
+}
+
+/** Candidate cordis.patch.yml files that may hold the token. */
+function profilePatchCandidates(dataDir: string): string[] {
+  const home = defaultDshHome()
+  if (dataDir === home) return [join(home, 'profiles', 'web', 'cordis.patch.yml')]
+  return [join(dataDir, 'cordis.patch.yml'), join(home, 'profiles', 'web', 'cordis.patch.yml')]
 }
 
 /** Read `platformUserToken` from the plugin config file (user-owned config item). */
-function readTokenFromConfigFile(): string | undefined {
-  const file = pluginConfigPath()
+function readTokenFromConfigFile(dataDir = defaultDshHome()): string | undefined {
+  const file = pluginConfigPath(dataDir)
   if (!existsSync(file)) return undefined
   try {
     const parsed = JSON.parse(readFileSync(file, 'utf8')) as { platformUserToken?: unknown }
@@ -69,23 +91,24 @@ function readTokenFromConfigFile(): string | undefined {
   }
 }
 
-/** Read `platformUserToken` from the web profile's cordis.patch.yml config item. */
-function readTokenFromProfileConfig(): string | undefined {
-  const home = process.env.DSH_HOME ?? join(homedir(), '.dsh')
-  const file = join(home, 'profiles', 'web', 'cordis.patch.yml')
-  if (!existsSync(file)) return undefined
-  try {
-    const text = readFileSync(file, 'utf8')
-    const match = text.match(/platformUserToken:\s*['"]([^'"]+)['"]/)
-    return match?.[1]
-  } catch {
-    return undefined
+/** Read `platformUserToken` from the active profile's cordis.patch.yml config item. */
+function readTokenFromProfileConfig(dataDir = defaultDshHome()): string | undefined {
+  for (const file of profilePatchCandidates(dataDir)) {
+    if (!existsSync(file)) continue
+    try {
+      const text = readFileSync(file, 'utf8')
+      const match = text.match(/platformUserToken:\s*['"]([^'"]+)['"]/)
+      if (match?.[1]) return match[1]
+    } catch {
+      // A corrupt patch must not block login resolution.
+    }
   }
+  return undefined
 }
 
 /** Persist the platform userToken as a user config item. */
-function saveTokenToConfigFile(token: string): void {
-  const file = pluginConfigPath()
+function saveTokenToConfigFile(dataDir: string, token: string): void {
+  const file = pluginConfigPath(dataDir)
   mkdirSync(join(file, '..'), { recursive: true })
   const payload = JSON.stringify({ platformUserToken: token }, null, 2)
   const temp = file + '.tmp'
@@ -100,29 +123,32 @@ function saveTokenToConfigFile(token: string): void {
 }
 
 /** Resolve the platform userToken from plugin config, env, profile config, then plugin config file. */
-function resolveUserToken(config: Config): string | undefined {
+function resolveUserToken(config: Config, dataDir = defaultDshHome()): string | undefined {
   return config.platformUserToken
     || process.env.DEEPSEEK_PLATFORM_USER_TOKEN
-    || readTokenFromProfileConfig()
-    || readTokenFromConfigFile()
+    || readTokenFromProfileConfig(dataDir)
+    || readTokenFromConfigFile(dataDir)
 }
 
-/** Remove stored userToken from the plugin config file and web profile patch. */
-function clearStoredToken(): void {
-  const configFile = pluginConfigPath()
-  if (existsSync(configFile)) rmSync(configFile, { force: true })
+/** Remove stored userToken from plugin config files and profile patches. */
+function clearStoredToken(dataDir = defaultDshHome()): void {
+  for (const dir of new Set([dataDir, defaultDshHome()])) {
+    const configFile = pluginConfigPath(dir)
+    if (existsSync(configFile)) rmSync(configFile, { force: true })
+  }
 
-  const home = process.env.DSH_HOME ?? join(homedir(), '.dsh')
-  const patchFile = join(home, 'profiles', 'web', 'cordis.patch.yml')
-  if (!existsSync(patchFile)) return
-  const text = readFileSync(patchFile, 'utf8')
-  const cleaned = text.replace(/# dsh-deepseek-usage[\s\S]*?platformUserToken:\s*'[^']*'\n?/, '')
-  if (cleaned !== text) writeFileSync(patchFile, cleaned)
+  for (const patchFile of profilePatchCandidates(dataDir)) {
+    if (!existsSync(patchFile)) continue
+    const text = readFileSync(patchFile, 'utf8')
+    const cleaned = text.replace(/# dsh-deepseek-usage[\s\S]*?platformUserToken:\s*'[^']*'\n?/, '')
+    if (cleaned !== text) writeFileSync(patchFile, cleaned)
+  }
 }
 
 /** Register the plugin. */
 export function apply(ctx: AppContext, config: Config): void {
-  const token = resolveUserToken(config)
+  const dataDir = resolveDataDir(ctx)
+  const token = resolveUserToken(config, dataDir)
   let snapshot: PlatformSnapshot = token === undefined
     ? { balance: null, today: null, price_ratio: null, error: '未登录 DeepSeek 开放平台，请点击面板中的“登录”按钮', fetched_at: new Date().toISOString() }
     : { balance: null, today: null, price_ratio: null, fetched_at: new Date().toISOString() }
@@ -130,7 +156,7 @@ export function apply(ctx: AppContext, config: Config): void {
   const getState = (): PlatformSnapshot => snapshot
 
   const refresh = async (): Promise<PlatformSnapshot> => {
-    const current = resolveUserToken(config)
+    const current = resolveUserToken(config, dataDir)
     if (!current) {
       snapshot = { balance: null, today: null, price_ratio: null, error: '未登录 DeepSeek 开放平台，请点击面板中的“登录”按钮', fetched_at: new Date().toISOString() }
       return snapshot
@@ -151,7 +177,7 @@ export function apply(ctx: AppContext, config: Config): void {
 
   const logout = (): { ok: boolean; message?: string } => {
     try {
-      clearStoredToken()
+      clearStoredToken(dataDir)
       closePlatformLogin()
       snapshot = { balance: null, today: null, price_ratio: null, error: '未登录 DeepSeek 开放平台，请点击面板中的“登录”按钮', fetched_at: new Date().toISOString() }
       return { ok: true }
@@ -173,7 +199,7 @@ export function apply(ctx: AppContext, config: Config): void {
     try {
       const token = await readPlatformTokenFromBrowser(9333)
       if (token) {
-        saveTokenToConfigFile(token)
+        saveTokenToConfigFile(dataDir, token)
         closePlatformLogin()
         await refresh()
         return { loggedIn: true, message: '登录成功' }
@@ -199,7 +225,7 @@ export function apply(ctx: AppContext, config: Config): void {
     const data = await fetchSessionModelUsageSeries(
       ctx.sessionPersistence,
       ctx.sessions,
-      modelUsageCachePath(),
+      modelUsageCachePath(dataDir),
       start,
       end,
       granularity,
@@ -217,7 +243,7 @@ export function apply(ctx: AppContext, config: Config): void {
     return fetchSessionModelUsageSeries(
       ctx.sessionPersistence,
       ctx.sessions,
-      modelUsageCachePath(),
+      modelUsageCachePath(dataDir),
       start,
       end,
       granularity,
