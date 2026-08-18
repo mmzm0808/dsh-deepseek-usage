@@ -8,7 +8,7 @@
 import type { Context } from '@deepseek-ai/cordis';
 import type { WebServer } from '@deepseek-ai/dsh-host-webserver';
 import z from 'schemastery';
-import { type SessionPersistenceLike } from './session-usage.js';
+import { type SessionPersistenceLike, type SessionsLike } from './session-usage.js';
 /** Stable cordis plugin name (matches cordis.patch.yml insert id). */
 export declare const name = "deepseek-usage";
 /** Services required before routes can mount. */
@@ -23,6 +23,7 @@ export interface Config {
 export declare const Config: z<Config>;
 type AppContext = Context & {
     webServer: WebServer;
+    sessions: SessionsLike;
     sessionPersistence: SessionPersistenceLike;
 };
 /** Register the plugin. */

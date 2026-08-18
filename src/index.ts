@@ -18,13 +18,13 @@ import { closePlatformLogin, readPlatformTokenFromBrowser, startPlatformLogin } 
 import { fetchPlatformSnapshot } from './platform.js'
 import type { ModelUsageResponse, PlatformSnapshot } from './protocol.js'
 import { makeUsageRoutes } from './routes.js'
-import { fetchSessionModelUsageSeries, type SessionPersistenceLike } from './session-usage.js'
+import { fetchSessionModelUsageSeries, type SessionPersistenceLike, type SessionsLike } from './session-usage.js'
 
 /** Stable cordis plugin name (matches cordis.patch.yml insert id). */
 export const name = 'deepseek-usage'
 
 /** Services required before routes can mount. */
-export const inject = ['webServer', 'sessionPersistence']
+export const inject = ['webServer', 'sessions', 'sessionPersistence']
 
 /** Plugin config. */
 export interface Config {
@@ -41,6 +41,7 @@ export const Config: z<Config> = z.object({
 
 type AppContext = Context & {
   webServer: WebServer
+  sessions: SessionsLike
   sessionPersistence: SessionPersistenceLike
 }
 
@@ -177,12 +178,21 @@ export function apply(ctx: AppContext, config: Config): void {
     }
   }
 
+  const modelUsageCache = new Map<string, { expires: number; data: ModelUsageResponse }>()
+  const MODEL_USAGE_CACHE_TTL_MS = 30_000
+
   const getModelUsage = async (
     start: string,
     end: string,
     granularity: 'hour' | 'day',
   ): Promise<ModelUsageResponse> => {
-    return fetchSessionModelUsageSeries(ctx.sessionPersistence, start, end, granularity)
+    const cacheKey = `${start}|${end}|${granularity}`
+    const cached = modelUsageCache.get(cacheKey)
+    if (cached && cached.expires > Date.now()) return cached.data
+
+    const data = await fetchSessionModelUsageSeries(ctx.sessionPersistence, ctx.sessions, start, end, granularity)
+    modelUsageCache.set(cacheKey, { expires: Date.now() + MODEL_USAGE_CACHE_TTL_MS, data })
+    return data
   }
 
   const disposers: Array<() => void> = []
