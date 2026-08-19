@@ -5,9 +5,11 @@
  * @module dsh-deepseek-usage/client
  */
 
-import type { ModelUsageResponse, ModelUsageSeries, UsageState } from '../protocol.js'
+import type { ModelUsageResponse, ModelUsageSeries, PriceRatio, UsageState } from '../protocol.js'
+import html2canvas from 'html2canvas-pro'
 import { DeepSeekUsageSettingsCard } from './VentusSettingsCard.js'
 import { VentusSettingsPage } from './VentusSettingsPage.js'
+import { applyVentusPrefs, readVentusPrefs, VENTUS_PREFS_EVENT, type VentusPrefs } from './ventus-prefs.js'
 
 /** Minimal slot service face used by this plugin. */
 interface SlotsLike {
@@ -50,8 +52,8 @@ body:not([data-ds-dark-theme]) [data-${NS}] { --dsu-bg:#eef0f4; --dsu-panel:#fff
 .${NS}-dot{ position:absolute; top:8px; right:8px; width:8px; height:8px; border-radius:50%; background:var(--dsu-green); box-shadow:0 0 0 4px rgba(52,211,153,.12); }
 .${NS}-panel{ position:absolute; right:0; top:0; bottom:0; width:460px; max-width:94vw; background:var(--dsu-panel); border-left:1px solid var(--dsu-border); box-shadow:-20px 0 60px rgba(0,0,0,.4); display:flex; flex-direction:column; z-index:2147483001; transform:translateX(105%); transition:transform .18s ease; pointer-events:auto; }
 .${NS}-panel.open{ transform:translateX(0); }
-.${NS}-header{ display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--dsu-border); background:var(--dsu-panel-2); }
-.${NS}-header .title{ flex:1; font-size:14px; font-weight:650; }
+.${NS}-header{ display:flex; align-items:center; flex-wrap:wrap; row-gap:8px; gap:10px; padding:14px 16px; border-bottom:1px solid var(--dsu-border); background:var(--dsu-panel-2); }
+.${NS}-header .title{ flex:1; min-width:0; font-size:14px; font-weight:650; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .${NS}-btn{ width:28px; height:28px; border:1px solid transparent; border-radius:8px; background:transparent; color:var(--dsu-muted); display:flex; align-items:center; justify-content:center; font-size:14px; cursor:pointer; }
 .${NS}-btn:hover{ background:rgba(255,255,255,.06); color:var(--dsu-text); }
 .${NS}-body{ flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:14px; }
@@ -104,13 +106,14 @@ body:not([data-ds-dark-theme]) [data-${NS}] .${NS}-btn:hover{ background:rgba(15
 .${NS}-resize:hover::after{ background:var(--dsu-brand); }
 .${NS}-page-switch{ width:auto; min-width:44px; padding:0 8px; white-space:nowrap; font-size:12px; }
 .${NS}-page-switch.active{ color:var(--dsu-brand); border-color:color-mix(in srgb,var(--dsu-brand) 40%, transparent); background:color-mix(in srgb,var(--dsu-brand) 12%, transparent); }
+.${NS}-range-btn{ width:auto; min-width:40px; padding:0 8px; white-space:nowrap; font-size:12px; }
+.${NS}-range-btn.active{ color:var(--dsu-brand); border-color:color-mix(in srgb,var(--dsu-brand) 40%, transparent); background:color-mix(in srgb,var(--dsu-brand) 12%, transparent); }
+.${NS}-shot{ width:auto; padding:0 10px; white-space:nowrap; font-size:12px; }
 .${NS}-trend-controls{ display:flex; flex-direction:column; gap:8px; padding:12px; background:var(--dsu-panel-2); border:1px solid var(--dsu-border); border-radius:12px; }
 .${NS}-trend-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .${NS}-trend-row label{ font-size:12px; color:var(--dsu-muted); }
-.${NS}-trend-row input[type=date]{ height:30px; padding:0 8px; border-radius:8px; border:1px solid var(--dsu-border); background:var(--dsu-panel); color:var(--dsu-text); font:inherit; font-size:12px; }
 .${NS}-trend-row button{ height:30px; padding:0 12px; border-radius:8px; border:1px solid var(--dsu-border); background:var(--dsu-panel-2); color:var(--dsu-text); font:inherit; font-size:12px; cursor:pointer; }
 .${NS}-trend-row button.active{ color:#fff; background:var(--dsu-brand); border-color:var(--dsu-brand); }
-.${NS}-trend-today{ color:var(--dsu-link); }
 .${NS}-trend-list{ display:flex; flex-direction:column; gap:12px; }
 .${NS}-trend-group{ display:flex; flex-direction:column; gap:8px; }
 .${NS}-trend-provider{ font-size:12px; font-weight:700; color:var(--dsu-muted); text-transform:uppercase; letter-spacing:.06em; padding:2px 4px; }
@@ -302,6 +305,70 @@ function fillModelSeries(
   }
 }
 
+/** Date-range preset shared by the overview and trends pages. */
+type RangeKey = 'today' | 'yesterday' | 'week'
+
+/** Resolve inclusive GMT+8 date bounds for a range preset. */
+function rangeDates(range: RangeKey): { start: string; end: string } {
+  const today = todayDateString()
+  if (range === 'today') return { start: today, end: today }
+  const daysBack = range === 'yesterday' ? 1 : 6
+  const start = new Date((gmt8Start(today) - daysBack * 86_400) * 1000).toISOString().slice(0, 10)
+  return { start, end: today }
+}
+
+/** Short display label for a range preset. */
+function rangeLabel(range: RangeKey): string {
+  return range === 'today' ? '当天' : range === 'yesterday' ? '昨天' : '近7天'
+}
+
+/** One aggregated per-model row for a date range. */
+interface RangeAggregateRow {
+  model: string
+  requests: number
+  tokens: number
+  cost: number
+}
+
+/** Aggregated overview totals for a date range. */
+interface RangeAggregate {
+  rows: RangeAggregateRow[]
+  requests: number
+  tokens: number
+  cost: number
+  /** False when no price ratio is available to estimate cost. */
+  costKnown: boolean
+}
+
+/** Fold model-usage series into per-model totals, estimating cost via the price ratio. */
+function aggregateSeries(series: ModelUsageSeries[], priceRatio: PriceRatio | null): RangeAggregate {
+  const byModel = new Map<string, RangeAggregateRow>()
+  for (const item of series) {
+    for (const point of item.points) {
+      let row = byModel.get(item.model)
+      if (!row) {
+        row = { model: item.model, requests: 0, tokens: 0, cost: 0 }
+        byModel.set(item.model, row)
+      }
+      row.requests += point.requests
+      row.tokens += point.tokens
+    }
+  }
+  const rows = [...byModel.values()].sort((a, b) => b.tokens - a.tokens)
+  const costKnown = priceRatio !== null
+  let requests = 0
+  let tokens = 0
+  let cost = 0
+  for (const row of rows) {
+    requests += row.requests
+    tokens += row.tokens
+    const a1 = priceRatio?.models.find(item => item.model === row.model)?.a1 ?? priceRatio?.default_a1
+    row.cost = typeof a1 === 'number' && Number.isFinite(a1) ? row.tokens * a1 : 0
+    cost += row.cost
+  }
+  return { rows, requests, tokens, cost, costKnown }
+}
+
 /** Mount the floating widget. */
 export function apply(ctx: ClientContext): void {
   let styleEl: HTMLStyleElement | null = null
@@ -311,6 +378,8 @@ export function apply(ctx: ClientContext): void {
     styleEl.textContent = CSS
     document.head.appendChild(styleEl)
   }
+
+  const disposeVentusPrefs = applyVentusPrefs()
 
   const host = document.createElement('div')
   host.dataset[NS] = ''
@@ -328,7 +397,11 @@ export function apply(ctx: ClientContext): void {
       <div class="${NS}-resize" data-action="resize" title="拖动调整宽度"></div>
       <div class="${NS}-header">
         <span class="title">DeepSeek API 用量</span>
+        <button class="${NS}-btn ${NS}-range-btn active" data-action="range" data-range="today" title="今天 0 点 ~ 24 点">当天</button>
+        <button class="${NS}-btn ${NS}-range-btn" data-action="range" data-range="yesterday" title="昨天全天">昨天</button>
+        <button class="${NS}-btn ${NS}-range-btn" data-action="range" data-range="week" title="今天往前 6 天（含今天）">近7天</button>
         <button class="${NS}-btn ${NS}-page-switch" data-action="page" title="模型用量趋势">趋势</button>
+        <button class="${NS}-btn ${NS}-shot" data-action="screenshot" title="复制当前页完整截图">📷 复制当前页截图</button>
         <button class="${NS}-btn" data-action="refresh" title="刷新">↻</button>
         <button class="${NS}-btn" data-action="close" title="收起">✕</button>
       </div>
@@ -361,12 +434,12 @@ export function apply(ctx: ClientContext): void {
           </div>
         </section>
         <section>
-          <div class="${NS}-section-title">今日</div>
+          <div class="${NS}-section-title" data-field="section-today">今日</div>
           <div class="${NS}-summary">
             <div class="${NS}-summary-card">
-              <div class="k">今日消费</div>
+              <div class="k" data-field="cost-key">今日消费</div>
               <div class="v" data-field="cost">--</div>
-              <div class="sub">平台实际扣费</div>
+              <div class="sub" data-field="cost-sub">平台实际扣费</div>
             </div>
             <div class="${NS}-summary-card">
               <div class="k">API 请求次数</div>
@@ -381,12 +454,12 @@ export function apply(ctx: ClientContext): void {
             <div class="${NS}-summary-card">
               <div class="k">模型数</div>
               <div class="v" data-field="model-count">--</div>
-              <div class="sub">今日有调用</div>
+              <div class="sub" data-field="model-count-sub">今日有调用</div>
             </div>
           </div>
         </section>
         <section>
-          <div class="${NS}-section-title">分模型今日</div>
+          <div class="${NS}-section-title" data-field="section-models">分模型今日</div>
           <div class="${NS}-table" data-field="table">
             <div class="${NS}-row head"><span>模型</span><span>请求</span><span>Tokens</span><span>消费</span></div>
           </div>
@@ -396,13 +469,7 @@ export function apply(ctx: ClientContext): void {
         <div class="${NS}-page" data-page="trends">
           <div class="${NS}-trend-controls">
             <div class="${NS}-trend-row">
-              <label>开始</label>
-              <input type="date" data-field="trend-start">
-              <label>结束</label>
-              <input type="date" data-field="trend-end">
-              <button class="${NS}-trend-today" data-action="trend-today">当天</button>
-            </div>
-            <div class="${NS}-trend-row">
+              <label>粒度</label>
               <button data-granularity="hour" data-action="granularity">按小时</button>
               <button data-granularity="day" data-action="granularity">按天</button>
             </div>
@@ -458,16 +525,25 @@ export function apply(ctx: ClientContext): void {
     table: host.querySelector('[data-field="table"]') as HTMLElement,
     footer: host.querySelector('[data-field="footer"]') as HTMLElement,
     tooltip: host.querySelector('[data-field="tooltip"]') as HTMLElement,
-    trendStart: host.querySelector('[data-field="trend-start"]') as HTMLInputElement,
-    trendEnd: host.querySelector('[data-field="trend-end"]') as HTMLInputElement,
+    sectionToday: host.querySelector('[data-field="section-today"]') as HTMLElement,
+    sectionModels: host.querySelector('[data-field="section-models"]') as HTMLElement,
+    costKey: host.querySelector('[data-field="cost-key"]') as HTMLElement,
+    costSub: host.querySelector('[data-field="cost-sub"]') as HTMLElement,
+    modelCountSub: host.querySelector('[data-field="model-count-sub"]') as HTMLElement,
     trendList: host.querySelector('[data-field="trend-list"]') as HTMLElement,
   }
+
+  let usageEnabled = readVentusPrefs().usageEnabled
+  let pollTimer: ReturnType<typeof setInterval> | undefined
 
   let open = false
   let currency = 'CNY'
   let selectedModel = 'deepseek-v4-flash'
   let lastState: UsageState | null = null
   let currentPage: 'overview' | 'trends' = 'overview'
+  let currentRange: RangeKey = 'today'
+  let aggregateFetchSeq = 0
+  let screenshotting = false
   let trendStartDate = todayDateString()
   let trendEndDate = todayDateString()
   let trendGranularity: 'hour' | 'day' = 'hour'
@@ -508,6 +584,7 @@ export function apply(ctx: ClientContext): void {
       const response = await fetch('/api/deepseek-usage/refresh', { method: 'POST' })
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       render(await response.json() as UsageState)
+      if (currentPage === 'overview' && currentRange !== 'today') void refreshOverviewRange()
     } catch {
       stateFields.footer.textContent = '刷新失败'
     }
@@ -643,8 +720,9 @@ export function apply(ctx: ClientContext): void {
       ? `${shortModelName(topModel ?? selectedModel)} 今日 A2/A1 = ${toScientific(topModelData.a2_today ?? 0)} / ${toScientific(topModelData.a1)}`
       : ''
 
-    const today = state.today
-    if (today) {
+    if (currentRange === 'today') {
+      const today = state.today
+      if (today) {
       stateFields.cost.textContent = money(today.cost, currency)
       stateFields.requests.textContent = today.requests.toLocaleString('zh-CN')
       stateFields.tokens.textContent = today.tokens.toLocaleString('zh-CN')
@@ -664,6 +742,7 @@ export function apply(ctx: ClientContext): void {
       stateFields.tokens.textContent = '--'
       stateFields.modelCount.textContent = '--'
       stateFields.table.innerHTML = `<div class="${NS}-row head"><span>模型</span><span>请求</span><span>Tokens</span><span>消费</span></div><div class="${NS}-row"><span class="model">暂无数据</span><span class="num">--</span><span class="num">--</span><span class="cost">--</span></div>`
+      }
     }
 
     stateFields.footer.textContent = `更新于 ${new Date(state.fetched_at).toLocaleTimeString('zh-CN', { hour12: false })}`
@@ -686,58 +765,211 @@ export function apply(ctx: ClientContext): void {
     if (page === 'trends' && !trendData) void loadTrends()
   }
 
-  const loadTrends = async (): Promise<void> => {
-    const start = stateFields.trendStart.value || trendStartDate
-    const end = stateFields.trendEnd.value || trendEndDate
-    if (start > end) {
-      stateFields.trendList.innerHTML = `<div class="${NS}-trend-error">开始日期不能晚于结束日期</div>`
+  const renderRangeSummary = (aggregate: RangeAggregate): void => {
+    stateFields.cost.textContent = aggregate.costKnown ? money(aggregate.cost, currency) : '--'
+    stateFields.requests.textContent = aggregate.requests.toLocaleString('zh-CN')
+    stateFields.tokens.textContent = aggregate.tokens.toLocaleString('zh-CN')
+    stateFields.modelCount.textContent = String(aggregate.rows.length)
+    const rows = aggregate.rows.map(row => `
+      <div class="${NS}-row">
+        <span class="model" title="${escapeHtml(row.model)}">${escapeHtml(row.model)}</span>
+        <span class="num">${row.requests.toLocaleString('zh-CN')}</span>
+        <span class="num">${compact(row.tokens)}</span>
+        <span class="cost">${aggregate.costKnown ? money(row.cost, currency) : '--'}</span>
+      </div>
+    `).join('')
+    stateFields.table.innerHTML = `<div class="${NS}-row head"><span>模型</span><span>请求</span><span>Tokens</span><span>消费</span></div>${rows || `<div class="${NS}-row"><span class="model">暂无数据</span><span class="num">--</span><span class="num">--</span><span class="cost">--</span></div>`}`
+  }
+
+  const refreshOverviewRange = async (): Promise<void> => {
+    if (currentRange === 'today') {
+      stateFields.sectionToday.textContent = '今日'
+      stateFields.sectionModels.textContent = '分模型今日'
+      stateFields.costKey.textContent = '今日消费'
+      stateFields.costSub.textContent = '平台实际扣费'
+      stateFields.modelCountSub.textContent = '今日有调用'
+      void load()
       return
     }
+    const seq = ++aggregateFetchSeq
+    if (!lastState) await load()
+    if (seq !== aggregateFetchSeq) return
+    const label = rangeLabel(currentRange)
+    stateFields.sectionToday.textContent = label
+    stateFields.sectionModels.textContent = '分模型' + label
+    stateFields.costKey.textContent = label + '消费'
+    stateFields.costSub.textContent = '估算（按历史均价）'
+    stateFields.modelCountSub.textContent = '范围内有调用'
+    const dates = rangeDates(currentRange)
+    try {
+      const series = await requestSeries(dates.start, dates.end, 'day')
+      if (seq !== aggregateFetchSeq) return
+      renderRangeSummary(aggregateSeries(series, lastState?.price_ratio ?? null))
+      stateFields.footer.textContent = '已更新 · ' + label
+    } catch (error) {
+      if (seq !== aggregateFetchSeq) return
+      stateFields.footer.textContent = '范围数据加载失败：' + (error instanceof Error ? error.message : String(error))
+    }
+  }
+
+  const applyRange = (range: RangeKey): void => {
+    if (currentRange === range) return
+    currentRange = range
+    host.querySelectorAll('[data-action="range"]').forEach(button => {
+      button.classList.toggle('active', button.getAttribute('data-range') === range)
+    })
+    const dates = rangeDates(range)
+    trendStartDate = dates.start
+    trendEndDate = dates.end
+    trendData = null
+    if (currentPage === 'trends') void loadTrends()
+    else void refreshOverviewRange()
+  }
+
+  const captureBackground = (): string => {
+    const panelBg = getComputedStyle(panel).backgroundColor
+    if (panelBg && panelBg !== 'transparent' && panelBg !== 'rgba(0, 0, 0, 0)') return panelBg
+    const bodyBg = getComputedStyle(document.body).backgroundColor
+    if (bodyBg && bodyBg !== 'transparent' && bodyBg !== 'rgba(0, 0, 0, 0)') return bodyBg
+    const dark = document.body.hasAttribute('data-ds-dark-theme') || window.matchMedia('(prefers-color-scheme: dark)').matches
+    return dark ? '#0b0e14' : '#eef0f4'
+  }
+
+  const captureCurrentPage = async (): Promise<void> => {
+    if (screenshotting) return
+    const page = host.querySelector('.' + NS + '-page.active') as HTMLElement | null
+    if (!page || page.children.length === 0) {
+      stateFields.footer.textContent = page ? '当前页面暂无内容' : '未找到当前页面'
+      return
+    }
+    const button = host.querySelector('[data-action="screenshot"]') as HTMLButtonElement | null
+    screenshotting = true
+    if (button) {
+      button.disabled = true
+      button.textContent = '截图生成中…'
+    }
+    try {
+      const bodyEl = host.querySelector('.' + NS + '-body') as HTMLElement | null
+      const contentHeight = Math.max(page.scrollHeight, bodyEl?.scrollHeight ?? 0)
+      if (contentHeight > 20_000) {
+        stateFields.footer.textContent = '页面过高（' + contentHeight + 'px），已中止截图'
+        return
+      }
+      const canvas = await html2canvas(page, {
+        scale: Math.min(2, window.devicePixelRatio || 1),
+        useCORS: true,
+        backgroundColor: captureBackground(),
+        logging: false,
+        scrollX: 0,
+        scrollY: 0,
+        onclone: (clonedDocument: Document): void => {
+          const clonedBody = clonedDocument.querySelector('.' + NS + '-body') as HTMLElement | null
+          if (clonedBody) {
+            clonedBody.style.height = 'auto'
+            clonedBody.style.maxHeight = 'none'
+            clonedBody.style.overflow = 'visible'
+          }
+          const clonedPanel = clonedDocument.querySelector('.' + NS + '-panel') as HTMLElement | null
+          if (clonedPanel) {
+            clonedPanel.style.height = 'auto'
+            clonedPanel.style.bottom = 'auto'
+          }
+          const clonedPage = clonedDocument.querySelector('.' + NS + '-page.active') as HTMLElement | null
+          if (clonedPage) clonedPage.style.height = 'auto'
+        },
+      })
+      const blob = await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob(result => result ? resolve(result) : reject(new Error('canvas 导出失败')), 'image/png')
+      })
+      try {
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+        stateFields.footer.textContent = '已复制截图'
+      } catch {
+        const url = URL.createObjectURL(blob)
+        const anchor = document.createElement('a')
+        anchor.href = url
+        anchor.download = 'deepseek-usage-' + (currentPage === 'trends' ? '趋势' : '总览') + '-' + todayDateString() + '.png'
+        document.body.appendChild(anchor)
+        anchor.click()
+        anchor.remove()
+        URL.revokeObjectURL(url)
+        stateFields.footer.textContent = '剪贴板不可用，已下载截图'
+      }
+    } catch (error) {
+      stateFields.footer.textContent = '截图失败：' + (error instanceof Error ? error.message : String(error))
+    } finally {
+      screenshotting = false
+      if (button) {
+        button.disabled = false
+        button.textContent = '📷 复制当前页截图'
+      }
+    }
+  }
+
+  const requestSeries = async (
+    start: string,
+    end: string,
+    granularity: 'hour' | 'day',
+    onSnapshot?: (series: ModelUsageSeries[]) => void,
+  ): Promise<ModelUsageSeries[]> => {
+    const url = '/api/deepseek-usage/model-usage/stream?start=' + encodeURIComponent(start) + '&end=' + encodeURIComponent(end) + '&granularity=' + granularity
+    const response = await fetch(url)
+    if (!response.ok) throw new Error('HTTP ' + response.status)
+    if (!response.body) throw new Error('浏览器不支持流式读取')
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let buffer = ''
+    let latest: ModelUsageSeries[] = []
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      let newlineIndex = buffer.indexOf('\n')
+      while (newlineIndex >= 0) {
+        const line = buffer.slice(0, newlineIndex).trim()
+        buffer = buffer.slice(newlineIndex + 1)
+        newlineIndex = buffer.indexOf('\n')
+        if (!line) continue
+        const message = JSON.parse(line) as {
+          type?: string
+          series?: ModelUsageSeries[]
+          result?: ModelUsageResponse
+          error?: string
+        }
+        if (message.type === 'snapshot' && message.series) {
+          latest = message.series
+          onSnapshot?.(latest)
+        } else if (message.type === 'done' && message.result) {
+          latest = message.result.series
+          onSnapshot?.(latest)
+        } else if (message.type === 'error') {
+          throw new Error(message.error ?? '加载失败')
+        }
+      }
+    }
+    return latest
+  }
+
+  const loadTrends = async (): Promise<void> => {
+    const start = trendStartDate
+    const end = trendEndDate
     const dayCount = Math.round((gmt8Start(end) - gmt8Start(start)) / 86_400) + 1
     if (dayCount > 31) {
-      stateFields.trendList.innerHTML = `<div class="${NS}-trend-error">日期范围不能超过 31 天</div>`
+      stateFields.trendList.innerHTML = '<div class="' + NS + '-trend-error">日期范围不能超过 31 天</div>'
       return
     }
     trendStartDate = start
     trendEndDate = end
-    stateFields.trendList.innerHTML = `<div class="${NS}-trend-loading">加载模型用量趋势…</div>`
+    stateFields.trendList.innerHTML = '<div class="' + NS + '-trend-loading">加载模型用量趋势…</div>'
     try {
-      const url = `/api/deepseek-usage/model-usage/stream?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&granularity=${trendGranularity}`
-      const response = await fetch(url)
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      if (!response.body) throw new Error('浏览器不支持流式读取')
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      for (;;) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        let newlineIndex = buffer.indexOf('\n')
-        while (newlineIndex >= 0) {
-          const line = buffer.slice(0, newlineIndex).trim()
-          buffer = buffer.slice(newlineIndex + 1)
-          newlineIndex = buffer.indexOf('\n')
-          if (!line) continue
-          const message = JSON.parse(line) as {
-            type?: string
-            series?: ModelUsageSeries[]
-            result?: ModelUsageResponse
-            error?: string
-          }
-          if (message.type === 'snapshot' && message.series) {
-            trendData = { start, end, granularity: trendGranularity, series: message.series }
-            renderTrends()
-          } else if (message.type === 'done' && message.result) {
-            trendData = message.result
-            renderTrends()
-          } else if (message.type === 'error') {
-            stateFields.trendList.innerHTML = `<div class="${NS}-trend-error">${escapeHtml(message.error ?? '加载失败')}</div>`
-          }
-        }
-      }
+      const series = await requestSeries(start, end, trendGranularity, snapshotSeries => {
+        trendData = { start, end, granularity: trendGranularity, series: snapshotSeries }
+        renderTrends()
+      })
+      trendData = { start, end, granularity: trendGranularity, series }
+      renderTrends()
     } catch (error) {
-      stateFields.trendList.innerHTML = `<div class="${NS}-trend-error">${escapeHtml(error instanceof Error ? error.message : String(error))}</div>`
+      stateFields.trendList.innerHTML = '<div class="' + NS + '-trend-error">' + escapeHtml(error instanceof Error ? error.message : String(error)) + '</div>'
     }
   }
 
@@ -1057,22 +1289,18 @@ export function apply(ctx: ClientContext): void {
   bindTooltip(stateFields.ballR0)
   host.querySelector('[data-action="close"]')?.addEventListener('click', () => toggle(false))
 
-  stateFields.trendStart.value = trendStartDate
-  stateFields.trendEnd.value = trendEndDate
   host.querySelector('[data-action="granularity"][data-granularity="hour"]')?.classList.add('active')
 
   host.querySelector('[data-action="page"]')?.addEventListener('click', () => {
     switchPage(currentPage === 'overview' ? 'trends' : 'overview')
   })
-  stateFields.trendStart.addEventListener('change', () => void loadTrends())
-  stateFields.trendEnd.addEventListener('change', () => void loadTrends())
-  host.querySelector('[data-action="trend-today"]')?.addEventListener('click', () => {
-    trendStartDate = todayDateString()
-    trendEndDate = todayDateString()
-    stateFields.trendStart.value = trendStartDate
-    stateFields.trendEnd.value = trendEndDate
-    void loadTrends()
+  host.querySelectorAll('[data-action="range"]').forEach(button => {
+    button.addEventListener('click', () => {
+      const value = button.getAttribute('data-range')
+      applyRange(value === 'yesterday' ? 'yesterday' : value === 'week' ? 'week' : 'today')
+    })
   })
+  host.querySelector('[data-action="screenshot"]')?.addEventListener('click', () => void captureCurrentPage())
   host.querySelectorAll('[data-action="granularity"]').forEach(button => {
     button.addEventListener('click', () => {
       trendGranularity = button.getAttribute('data-granularity') === 'day' ? 'day' : 'hour'
@@ -1143,8 +1371,28 @@ export function apply(ctx: ClientContext): void {
     }, VentusSettingsPage))
   }, 800)
 
-  void load()
-  const timer = setInterval(() => { void load() }, POLL_MS)
+  const applyUsageEnabled = (enabled: boolean): void => {
+    usageEnabled = enabled
+    host.style.display = enabled ? '' : 'none'
+    if (enabled) {
+      void load()
+      if (pollTimer === undefined) pollTimer = setInterval(() => { void load() }, POLL_MS)
+    } else {
+      if (pollTimer !== undefined) {
+        clearInterval(pollTimer)
+        pollTimer = undefined
+      }
+      toggle(false)
+    }
+  }
+
+  const onVentusPrefs = (event: Event): void => {
+    const detail = (event as CustomEvent<VentusPrefs>).detail
+    if (detail !== undefined) applyUsageEnabled(detail.usageEnabled)
+  }
+  window.addEventListener(VENTUS_PREFS_EVENT, onVentusPrefs)
+
+  applyUsageEnabled(usageEnabled)
 
   let hourlyTrendTimer: ReturnType<typeof setTimeout> | undefined
   const scheduleHourlyTrendRefresh = (): void => {
@@ -1155,14 +1403,15 @@ export function apply(ctx: ClientContext): void {
     next.setHours(now.getHours() + 1)
     const delay = Math.max(1000, next.getTime() - now.getTime() + 250)
     hourlyTrendTimer = setTimeout(() => {
-      if (trendData) void loadTrends()
+      if (usageEnabled && trendData) void loadTrends()
       scheduleHourlyTrendRefresh()
     }, delay)
   }
   scheduleHourlyTrendRefresh()
 
   ctx.effect(() => () => {
-    clearInterval(timer)
+    if (pollTimer !== undefined) clearInterval(pollTimer)
+    window.removeEventListener(VENTUS_PREFS_EVENT, onVentusPrefs)
     clearInterval(loginPollTimer)
     clearTimeout(pageTimer)
     clearTimeout(hourlyTrendTimer)
@@ -1171,6 +1420,7 @@ export function apply(ctx: ClientContext): void {
     disposeVentusPage?.()
     document.removeEventListener('keydown', onKeydown)
     document.removeEventListener('click', onDocumentClick)
+    disposeVentusPrefs()
     host.remove()
     styleEl?.remove()
   }, 'dsh-deepseek-usage: ui')

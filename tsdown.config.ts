@@ -10,7 +10,11 @@ const clientBundle: UserConfig = {
   dts: false,
   sourcemap: true,
   clean: false,
-  external: ['react'],
+  deps: {
+    alwaysBundle: ['html2canvas-pro'],
+    neverBundle: ['react'],
+    onlyBundle: ['html2canvas-pro'],
+  },
   define: {
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV ?? 'production'),
   },

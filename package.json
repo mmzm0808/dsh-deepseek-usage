@@ -46,6 +46,9 @@
     "@deepseek-ai/dsh-host-webserver": "^0.1.0-rc.6",
     "@deepseek-ai/dsh-llm": "^0.1.0-rc.6"
   },
+  "dependencies": {
+    "html2canvas-pro": "^2.3.9"
+  },
   "devDependencies": {
     "@deepseek-ai/cordis": "^4.0.1",
     "@deepseek-ai/dsh-client-ui-slots": "^0.1.0-rc.6",
