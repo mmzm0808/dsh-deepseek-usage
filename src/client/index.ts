@@ -109,6 +109,8 @@ body:not([data-ds-dark-theme]) [data-${NS}] .${NS}-btn:hover{ background:rgba(15
 .${NS}-range-btn{ width:auto; min-width:40px; padding:0 8px; white-space:nowrap; font-size:12px; }
 .${NS}-range-btn.active{ color:var(--dsu-brand); border-color:color-mix(in srgb,var(--dsu-brand) 40%, transparent); background:color-mix(in srgb,var(--dsu-brand) 12%, transparent); }
 .${NS}-shot{ width:auto; padding:0 10px; white-space:nowrap; font-size:12px; }
+.${NS}-range-select{ height:30px; padding:0 6px; border-radius:8px; border:1px solid var(--dsu-border); background:var(--dsu-panel-2); color:var(--dsu-text); font:inherit; font-size:12px; }
+.${NS}-header .title{ flex:none; white-space:nowrap; }
 .${NS}-trend-controls{ display:flex; flex-direction:column; gap:8px; padding:12px; background:var(--dsu-panel-2); border:1px solid var(--dsu-border); border-radius:12px; }
 .${NS}-trend-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .${NS}-trend-row label{ font-size:12px; color:var(--dsu-muted); }
@@ -397,11 +399,13 @@ export function apply(ctx: ClientContext): void {
       <div class="${NS}-resize" data-action="resize" title="拖动调整宽度"></div>
       <div class="${NS}-header">
         <span class="title">DeepSeek API 用量</span>
-        <button class="${NS}-btn ${NS}-range-btn active" data-action="range" data-range="today" title="今天 0 点 ~ 24 点">当天</button>
-        <button class="${NS}-btn ${NS}-range-btn" data-action="range" data-range="yesterday" title="昨天全天">昨天</button>
-        <button class="${NS}-btn ${NS}-range-btn" data-action="range" data-range="week" title="今天往前 6 天（含今天）">近7天</button>
+        <select class="${NS}-range-select" data-action="range" title="选择统计范围（当天/昨天/近7天）">
+          <option value="today" selected>当天</option>
+          <option value="yesterday">昨天</option>
+          <option value="week">近7天</option>
+        </select>
         <button class="${NS}-btn ${NS}-page-switch" data-action="page" title="模型用量趋势">趋势</button>
-        <button class="${NS}-btn ${NS}-shot" data-action="screenshot" title="复制当前页完整截图">📷 复制当前页截图</button>
+        <button class="${NS}-btn ${NS}-shot" data-action="screenshot" title="复制当前页完整截图">📷 复制截图</button>
         <button class="${NS}-btn" data-action="refresh" title="刷新">↻</button>
         <button class="${NS}-btn" data-action="close" title="收起">✕</button>
       </div>
@@ -815,9 +819,8 @@ export function apply(ctx: ClientContext): void {
   const applyRange = (range: RangeKey): void => {
     if (currentRange === range) return
     currentRange = range
-    host.querySelectorAll('[data-action="range"]').forEach(button => {
-      button.classList.toggle('active', button.getAttribute('data-range') === range)
-    })
+    const rangeSelect = host.querySelector<HTMLSelectElement>('[data-action="range"]')
+    if (rangeSelect) rangeSelect.value = range
     const dates = rangeDates(range)
     trendStartDate = dates.start
     trendEndDate = dates.end
@@ -884,16 +887,8 @@ export function apply(ctx: ClientContext): void {
       try {
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
         stateFields.footer.textContent = '已复制截图'
-      } catch {
-        const url = URL.createObjectURL(blob)
-        const anchor = document.createElement('a')
-        anchor.href = url
-        anchor.download = 'deepseek-usage-' + (currentPage === 'trends' ? '趋势' : '总览') + '-' + todayDateString() + '.png'
-        document.body.appendChild(anchor)
-        anchor.click()
-        anchor.remove()
-        URL.revokeObjectURL(url)
-        stateFields.footer.textContent = '剪贴板不可用，已下载截图'
+      } catch (clipboardError) {
+        stateFields.footer.textContent = '复制截图失败：' + (clipboardError instanceof Error ? clipboardError.message : String(clipboardError))
       }
     } catch (error) {
       stateFields.footer.textContent = '截图失败：' + (error instanceof Error ? error.message : String(error))
@@ -901,7 +896,7 @@ export function apply(ctx: ClientContext): void {
       screenshotting = false
       if (button) {
         button.disabled = false
-        button.textContent = '📷 复制当前页截图'
+        button.textContent = '📷 复制截图'
       }
     }
   }
@@ -1294,11 +1289,9 @@ export function apply(ctx: ClientContext): void {
   host.querySelector('[data-action="page"]')?.addEventListener('click', () => {
     switchPage(currentPage === 'overview' ? 'trends' : 'overview')
   })
-  host.querySelectorAll('[data-action="range"]').forEach(button => {
-    button.addEventListener('click', () => {
-      const value = button.getAttribute('data-range')
-      applyRange(value === 'yesterday' ? 'yesterday' : value === 'week' ? 'week' : 'today')
-    })
+  host.querySelector('[data-action="range"]')?.addEventListener('change', (event: Event) => {
+    const value = (event.target as HTMLSelectElement).value
+    applyRange(value === 'yesterday' ? 'yesterday' : value === 'week' ? 'week' : 'today')
   })
   host.querySelector('[data-action="screenshot"]')?.addEventListener('click', () => void captureCurrentPage())
   host.querySelectorAll('[data-action="granularity"]').forEach(button => {
