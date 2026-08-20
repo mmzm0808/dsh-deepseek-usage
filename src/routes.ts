@@ -29,6 +29,8 @@ export interface UsageRoutesDeps {
     granularity: 'hour' | 'day',
     onSnapshot: (series: ModelUsageResponse['series']) => void,
   ): Promise<ModelUsageResponse>
+  /** 总览页范围数据：DeepSeek 开放平台（官方用量看板同源），非本地 session 统计。 */
+  platformModelUsage(start: string, end: string, granularity: 'hour' | 'day'): Promise<ModelUsageResponse>
 }
 
 /** Cap on JSON request bodies. */
@@ -188,5 +190,26 @@ export function makeUsageRoutes(deps: UsageRoutesDeps): WebRoute[] {
     },
   }
 
-  return [state, refresh, loginStart, loginStatus, logout, modelUsage, modelUsageStream]
+  const modelUsagePlatform: WebRoute = {
+    kind: 'exact',
+    path: '/api/deepseek-usage/model-usage/platform',
+    handler: async (req, res) => {
+      if (!guard(req, res, 'GET')) return
+      try {
+        const url = new URL(req.url ?? '/', 'http://localhost')
+        const start = url.searchParams.get('start') ?? ''
+        const end = url.searchParams.get('end') ?? ''
+        const granularity = url.searchParams.get('granularity') === 'day' ? 'day' : 'hour'
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || !/^\d{4}-\d{2}-\d{2}$/.test(end)) {
+          writeJson(res, 400, { error: 'start/end must be YYYY-MM-DD' })
+          return
+        }
+        writeJson(res, 200, await deps.platformModelUsage(start, end, granularity))
+      } catch (error) {
+        writeJson(res, 500, { error: error instanceof Error ? error.message : String(error) })
+      }
+    },
+  }
+
+  return [state, refresh, loginStart, loginStatus, logout, modelUsage, modelUsageStream, modelUsagePlatform]
 }

@@ -841,10 +841,11 @@ export function apply(ctx: ClientContext): void {
     stateFields.modelCountSub.textContent = '范围内有调用'
     const dates = rangeDates(currentRange)
     try {
-      const series = await requestSeries(dates.start, dates.end, 'day')
+      // 总览范围数据必须与官方用量看板同源（开放平台），不走本地 session 统计。
+      const series = await requestPlatformSeries(dates.start, dates.end, 'day')
       if (seq !== aggregateFetchSeq) return
       renderRangeSummary(aggregateSeries(series, lastState?.price_ratio ?? null))
-      stateFields.footer.textContent = '已更新 · ' + label
+      stateFields.footer.textContent = '已更新（开放平台） · ' + label
     } catch (error) {
       if (seq !== aggregateFetchSeq) return
       stateFields.footer.textContent = '范围数据加载失败：' + (error instanceof Error ? error.message : String(error))
@@ -985,6 +986,22 @@ export function apply(ctx: ClientContext): void {
       }
     }
     return latest
+  }
+
+  /** 总览页范围数据：DeepSeek 开放平台（官方看板同源），非流式一次返回。 */
+  const requestPlatformSeries = async (
+    start: string,
+    end: string,
+    granularity: 'hour' | 'day',
+  ): Promise<ModelUsageSeries[]> => {
+    const url = '/api/deepseek-usage/model-usage/platform?start=' + encodeURIComponent(start) + '&end=' + encodeURIComponent(end) + '&granularity=' + granularity
+    const response = await fetch(url)
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null) as { error?: string } | null
+      throw new Error(payload?.error ?? ('HTTP ' + response.status))
+    }
+    const payload = await response.json() as ModelUsageResponse
+    return payload.series
   }
 
   const loadTrends = async (): Promise<void> => {

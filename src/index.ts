@@ -15,7 +15,7 @@ import { homedir } from 'node:os'
 import { join } from 'node:path'
 import z from 'schemastery'
 import { closePlatformLogin, readPlatformTokenFromBrowser, startPlatformLogin } from './login.js'
-import { fetchPlatformSnapshot } from './platform.js'
+import { fetchModelUsageSeries, fetchPlatformSnapshot } from './platform.js'
 import type { ModelUsageResponse, PlatformSnapshot } from './protocol.js'
 import { makeUsageRoutes } from './routes.js'
 import { fetchSessionModelUsageSeries, type SessionPersistenceLike, type SessionsLike } from './session-usage.js'
@@ -251,6 +251,17 @@ export function apply(ctx: AppContext, config: Config): void {
     )
   }
 
+  /** 总览页范围数据：走 DeepSeek 开放平台（与官方用量看板同源），非本地 session 统计。 */
+  const platformModelUsage = async (
+    start: string,
+    end: string,
+    granularity: 'hour' | 'day',
+  ): Promise<ModelUsageResponse> => {
+    const token = resolveUserToken(config, dataDir)
+    if (!token) throw new Error('未登录开放平台（platformUserToken 缺失），范围数据需先登录')
+    return fetchModelUsageSeries(token, start, end, granularity)
+  }
+
   const disposers: Array<() => void> = []
 
   disposers.push(ctx.effect(
@@ -263,6 +274,7 @@ export function apply(ctx: AppContext, config: Config): void {
         logout,
         getModelUsage,
         streamModelUsage,
+        platformModelUsage,
       }).map(route => ctx.webServer.register(route))
       return () => { for (const dispose of routeDisposers) dispose() }
     },
