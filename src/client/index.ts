@@ -308,20 +308,52 @@ function fillModelSeries(
 }
 
 /** Date-range preset shared by the overview and trends pages. */
-type RangeKey = 'today' | 'yesterday' | 'week'
+type RangeKey = 'today' | 'yesterday' | 'week' | 'month' | 'thisWeek' | 'thisMonth'
 
 /** Resolve inclusive GMT+8 date bounds for a range preset. */
 function rangeDates(range: RangeKey): { start: string; end: string } {
   const today = todayDateString()
   if (range === 'today') return { start: today, end: today }
-  const daysBack = range === 'yesterday' ? 1 : 6
-  const start = new Date((gmt8Start(today) - daysBack * 86_400) * 1000).toISOString().slice(0, 10)
-  return { start, end: today }
+  if (range === 'yesterday') {
+    const start = new Date((gmt8Start(today) - 86_400) * 1000).toISOString().slice(0, 10)
+    return { start, end: today }
+  }
+  if (range === 'week') {
+    const start = new Date((gmt8Start(today) - 6 * 86_400) * 1000).toISOString().slice(0, 10)
+    return { start, end: today }
+  }
+  // 近一个月：上个月同日（上个月无同日时取上个月最后一天），天数随月份变化，非固定 30 天。
+  if (range === 'month') {
+    const [y, m, d] = today.split('-').map(Number)
+    const prevLastDay = new Date(Date.UTC(y, m - 1, 0)).getUTCDate()
+    const prevDay = Math.min(d, prevLastDay)
+    const start = `${y}-${String(m - 1).padStart(2, '0')}-${String(prevDay).padStart(2, '0')}`
+    return { start, end: today }
+  }
+  // 本周：周一为一周第一天，从本周一 00:00 算到现在。
+  if (range === 'thisWeek') {
+    const weekday = new Date(`${today}T12:00:00+08:00`).getUTCDay()
+    const daysSinceMonday = (weekday + 6) % 7
+    const start = new Date((gmt8Start(today) - daysSinceMonday * 86_400) * 1000).toISOString().slice(0, 10)
+    return { start, end: today }
+  }
+  // 本月：从本月 1 号算到现在。
+  if (range === 'thisMonth') {
+    return { start: `${today.slice(0, 8)}01`, end: today }
+  }
+  return { start: today, end: today }
 }
 
 /** Short display label for a range preset. */
 function rangeLabel(range: RangeKey): string {
-  return range === 'today' ? '当天' : range === 'yesterday' ? '昨天' : '近7天'
+  switch (range) {
+    case 'today': return '当天'
+    case 'yesterday': return '昨天'
+    case 'week': return '近7天'
+    case 'month': return '近一个月'
+    case 'thisWeek': return '本周'
+    case 'thisMonth': return '本月'
+  }
 }
 
 /** One aggregated per-model row for a date range. */
@@ -399,10 +431,13 @@ export function apply(ctx: ClientContext): void {
       <div class="${NS}-resize" data-action="resize" title="拖动调整宽度"></div>
       <div class="${NS}-header">
         <span class="title">DeepSeek API 用量</span>
-        <select class="${NS}-range-select" data-action="range" title="选择统计范围（当天/昨天/近7天）">
+        <select class="${NS}-range-select" data-action="range" title="选择统计范围（当天/昨天/近7天/近一个月/本周/本月）">
           <option value="today" selected>当天</option>
           <option value="yesterday">昨天</option>
           <option value="week">近7天</option>
+          <option value="month">近一个月</option>
+          <option value="thisWeek">本周</option>
+          <option value="thisMonth">本月</option>
         </select>
         <button class="${NS}-btn ${NS}-page-switch" data-action="page" title="模型用量趋势">趋势</button>
         <button class="${NS}-btn ${NS}-shot" data-action="screenshot" title="复制当前页完整截图">📷 复制截图</button>
@@ -852,13 +887,19 @@ export function apply(ctx: ClientContext): void {
       button.textContent = '截图生成中…'
     }
     try {
+      // 截图整个侧边栏面板（头部/中间内容/底部状态栏），而非仅中间内容块。
       const bodyEl = host.querySelector('.' + NS + '-body') as HTMLElement | null
-      const contentHeight = Math.max(page.scrollHeight, bodyEl?.scrollHeight ?? 0)
-      if (contentHeight > 20_000) {
+      const contentHeight = Math.max(panel.scrollHeight, bodyEl?.scrollHeight ?? 0)
+      if (contentHeight > 60_000) {
         stateFields.footer.textContent = '页面过高（' + contentHeight + 'px），已中止截图'
         return
       }
-      const canvas = await html2canvas(page, {
+      // 截图内容里按钮必须显示原始文案（不截入“截图生成中…”状态）。
+      if (button) {
+        button.disabled = false
+        button.textContent = '📷 复制截图'
+      }
+      const canvas = await html2canvas(panel, {
         scale: Math.min(2, window.devicePixelRatio || 1),
         useCORS: true,
         backgroundColor: captureBackground(),
@@ -876,6 +917,7 @@ export function apply(ctx: ClientContext): void {
           if (clonedPanel) {
             clonedPanel.style.height = 'auto'
             clonedPanel.style.bottom = 'auto'
+            clonedPanel.style.transform = 'none'
           }
           const clonedPage = clonedDocument.querySelector('.' + NS + '-page.active') as HTMLElement | null
           if (clonedPage) clonedPage.style.height = 'auto'
@@ -1291,7 +1333,7 @@ export function apply(ctx: ClientContext): void {
   })
   host.querySelector('[data-action="range"]')?.addEventListener('change', (event: Event) => {
     const value = (event.target as HTMLSelectElement).value
-    applyRange(value === 'yesterday' ? 'yesterday' : value === 'week' ? 'week' : 'today')
+    applyRange(value as RangeKey)
   })
   host.querySelector('[data-action="screenshot"]')?.addEventListener('click', () => void captureCurrentPage())
   host.querySelectorAll('[data-action="granularity"]').forEach(button => {
