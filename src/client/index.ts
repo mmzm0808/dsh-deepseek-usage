@@ -131,9 +131,9 @@ body:not([data-ds-dark-theme]) [data-${NS}] .${NS}-btn:hover{ background:rgba(15
 
 /** Convert a number to a compact K/M label. */
 function compact(value: number): string {
-  if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)}B`
-  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(value >= 10_000_000 ? 1 : 2)}M`
-  if (value >= 1_000) return `${Math.round(value / 1_000)}K`
+  if (value >= 100_000_000) return `${(value / 100_000_000).toFixed(value >= 1_000_000_000 ? 1 : 2)}亿`
+  if (value >= 10_000) return `${(value / 10_000).toFixed(value >= 1_000_000 ? 1 : 2)}万`
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}千`
   return String(value)
 }
 
@@ -217,6 +217,12 @@ function todayDateString(): string {
 /** GMT+8 midnight epoch seconds for a YYYY-MM-DD date. */
 function gmt8Start(date: string): number {
   return Math.floor(new Date(`${date}T00:00:00+08:00`).getTime() / 1000)
+}
+
+/** Format an epoch second as the GMT+8 calendar date (toISOString is UTC, so
+ *  add the +8h offset before slicing). */
+function gmt8Date(epochSeconds: number): string {
+  return new Date((epochSeconds + 28_800) * 1000).toISOString().slice(0, 10)
 }
 
 /** List every calendar date in an inclusive YYYY-MM-DD range. */
@@ -315,27 +321,20 @@ function rangeDates(range: RangeKey): { start: string; end: string } {
   const today = todayDateString()
   if (range === 'today') return { start: today, end: today }
   if (range === 'yesterday') {
-    const start = new Date((gmt8Start(today) - 86_400) * 1000).toISOString().slice(0, 10)
-    return { start, end: today }
+    return { start: gmt8Date(gmt8Start(today) - 86_400), end: today }
   }
   if (range === 'week') {
-    const start = new Date((gmt8Start(today) - 6 * 86_400) * 1000).toISOString().slice(0, 10)
-    return { start, end: today }
+    return { start: gmt8Date(gmt8Start(today) - 6 * 86_400), end: today }
   }
-  // 近一个月：上个月同日（上个月无同日时取上个月最后一天），天数随月份变化，非固定 30 天。
+  // 近一个月：今天往前 30 天（含今天共 31 个日历日），与开放平台 31 天上限一致。
   if (range === 'month') {
-    const [y, m, d] = today.split('-').map(Number)
-    const prevLastDay = new Date(Date.UTC(y, m - 1, 0)).getUTCDate()
-    const prevDay = Math.min(d, prevLastDay)
-    const start = `${y}-${String(m - 1).padStart(2, '0')}-${String(prevDay).padStart(2, '0')}`
-    return { start, end: today }
+    return { start: gmt8Date(gmt8Start(today) - 30 * 86_400), end: today }
   }
   // 本周：周一为一周第一天，从本周一 00:00 算到现在。
   if (range === 'thisWeek') {
     const weekday = new Date(`${today}T12:00:00+08:00`).getUTCDay()
     const daysSinceMonday = (weekday + 6) % 7
-    const start = new Date((gmt8Start(today) - daysSinceMonday * 86_400) * 1000).toISOString().slice(0, 10)
-    return { start, end: today }
+    return { start: gmt8Date(gmt8Start(today) - daysSinceMonday * 86_400), end: today }
   }
   // 本月：从本月 1 号算到现在。
   if (range === 'thisMonth') {
@@ -469,6 +468,8 @@ export function apply(ctx: ClientContext): void {
             <div class="${NS}-balance-detail">
               <div class="item"><div class="k">赠金余额</div><div class="v" data-field="bonus">--</div></div>
               <div class="item"><div class="k">累计消费</div><div class="v" data-field="total-cost">--</div></div>
+              <div class="item"><div class="k">累计Tokens</div><div class="v" data-field="cumulative-tokens" title="2026-08-01 起累计">--</div></div>
+              <div class="item"><div class="k">累计请求数</div><div class="v" data-field="cumulative-requests" title="2026-08-01 起累计">--</div></div>
             </div>
           </div>
         </section>
@@ -557,6 +558,8 @@ export function apply(ctx: ClientContext): void {
     r0Today: host.querySelector('[data-field="r0-today"]') as HTMLElement,
     bonus: host.querySelector('[data-field="bonus"]') as HTMLElement,
     totalCost: host.querySelector('[data-field="total-cost"]') as HTMLElement,
+    cumulativeTokens: host.querySelector('[data-field="cumulative-tokens"]') as HTMLElement,
+    cumulativeRequests: host.querySelector('[data-field="cumulative-requests"]') as HTMLElement,
     cost: host.querySelector('[data-field="cost"]') as HTMLElement,
     requests: host.querySelector('[data-field="requests"]') as HTMLElement,
     tokens: host.querySelector('[data-field="tokens"]') as HTMLElement,
@@ -716,6 +719,9 @@ export function apply(ctx: ClientContext): void {
       stateFields.amountSub.textContent = currency
       stateFields.bonus.textContent = `${symbol}${balance.bonus_balance.toFixed(2)}`
       stateFields.totalCost.textContent = `${symbol}${balance.total_cost.toFixed(2)}`
+      const cumulative = state.cumulative
+      stateFields.cumulativeTokens.textContent = cumulative ? compact(cumulative.tokens) : '--'
+      stateFields.cumulativeRequests.textContent = cumulative ? compact(cumulative.requests) : '--'
     } else {
       ballValue.textContent = '--'
       stateFields.source.textContent = '无数据'
@@ -723,6 +729,8 @@ export function apply(ctx: ClientContext): void {
       stateFields.amountSub.textContent = ''
       stateFields.bonus.textContent = '--'
       stateFields.totalCost.textContent = '--'
+      stateFields.cumulativeTokens.textContent = '--'
+      stateFields.cumulativeRequests.textContent = '--'
     }
 
     const ratio = state.price_ratio
@@ -802,6 +810,7 @@ export function apply(ctx: ClientContext): void {
     pageSwitch.textContent = page === 'overview' ? '趋势' : '总览'
     pageSwitch.classList.toggle('active', page === 'trends')
     if (page === 'trends' && !trendData) void loadTrends()
+    else if (page === 'overview') void refreshOverviewRange()
   }
 
   const renderRangeSummary = (aggregate: RangeAggregate): void => {

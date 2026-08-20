@@ -30,6 +30,8 @@ export interface UsageRoutesDeps {
     getModelUsage(start: string, end: string, granularity: 'hour' | 'day'): Promise<ModelUsageResponse>;
     /** Fetch per-model usage buckets and emit progressive snapshots while scanning. */
     streamModelUsage(start: string, end: string, granularity: 'hour' | 'day', onSnapshot: (series: ModelUsageResponse['series']) => void): Promise<ModelUsageResponse>;
+    /** 总览页范围数据：DeepSeek 开放平台（官方用量看板同源），非本地 session 统计。 */
+    platformModelUsage(start: string, end: string, granularity: 'hour' | 'day'): Promise<ModelUsageResponse>;
 }
 /** Build the route family. */
 export declare function makeUsageRoutes(deps: UsageRoutesDeps): WebRoute[];

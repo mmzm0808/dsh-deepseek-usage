@@ -80,6 +80,8 @@ export interface PlatformSnapshot {
   balance: PlatformBalance | null
   today: PlatformToday | null
   price_ratio: PriceRatio | null
+  /** Cumulative API usage since the platform retains history (2026-08-01). */
+  cumulative?: { tokens: number; requests: number } | null
   error?: string
   fetched_at: string
 }

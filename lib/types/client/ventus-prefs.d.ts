@@ -12,6 +12,8 @@
 export declare const VENTUS_PREFS_KEY = "dsh.ventus.preferences";
 export declare const VENTUS_PREFS_EVENT = "ventus:prefs";
 export interface VentusPrefs {
+    /** When false, the usage widget hides its floating UI and stops polling. */
+    usageEnabled: boolean;
     /** Rewrite cache-hit percentages to two decimals in the composer stats line. */
     cacheHit2Decimals: boolean;
     /** When true, --dsh-chat-content-width becomes fluid (fills sidebar gap). */
