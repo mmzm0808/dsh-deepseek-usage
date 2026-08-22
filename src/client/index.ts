@@ -62,7 +62,7 @@ body:not([data-ds-dark-theme]) [data-${NS}] { --dsu-bg:#eef0f4; --dsu-panel:#fff
 .${NS}-balance-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; font-size:12px; color:var(--dsu-muted); }
 .${NS}-balance-main{ display:flex; align-items:center; flex-wrap:nowrap; gap:8px; margin-bottom:10px; }
 .${NS}-model-label{ margin-left:auto; font-size:12px; color:var(--dsu-muted); white-space:nowrap; flex:none; }
-.${NS}-balance-main select{ flex:none; height:30px; padding:0 8px; border-radius:8px; border:1px solid var(--dsu-border); background:var(--dsu-panel-2); color:var(--dsu-text); font:inherit; font-size:12px; }
+.${NS}-balance-main select{ flex:none; height:30px; padding:0 8px; border-radius:8px; border:1px solid var(--dsu-border); background:var(--dsu-panel-2); color:var(--dsu-text); font:inherit; font-size:12px; max-width:200px; overflow:hidden; text-overflow:ellipsis; }
 .${NS}-r0-row{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
 .${NS}-amount{ font-size:30px; font-weight:700; letter-spacing:-.02em; font-variant-numeric:tabular-nums; }
 .${NS}-amount-sub{ color:var(--dsu-muted); font-size:13px; }
@@ -454,7 +454,7 @@ export function apply(ctx: ClientContext): void {
           <option value="thisMonth">本月</option>
         </select>
         <button class="${NS}-btn ${NS}-page-switch" data-action="page" title="模型用量趋势">趋势</button>
-        <button class="${NS}-btn ${NS}-shot" data-action="screenshot" title="复制当前页完整截图">📷 复制截图</button>
+        <button class="${NS}-btn ${NS}-shot" data-action="screenshot" title="复制当前页完整截图">截图</button>
         <button class="${NS}-btn" data-action="refresh" title="刷新">↻</button>
         <button class="${NS}-btn" data-action="close" title="收起">✕</button>
       </div>
@@ -948,7 +948,7 @@ export function apply(ctx: ClientContext): void {
       // 截图内容里按钮必须显示原始文案（不截入“截图生成中…”状态）。
       if (button) {
         button.disabled = false
-        button.textContent = '📷 复制截图'
+        button.textContent = '截图'
       }
       const canvas = await html2canvas(panel, {
         scale: Math.min(2, window.devicePixelRatio || 1),
