@@ -19,6 +19,10 @@ export interface PlatformModelUsage {
     requests: number;
     tokens: number;
     cost: number;
+    /** Today's cache-hit input tokens (open-platform data, drives the hit rate). */
+    cacheHitTokens: number;
+    /** Today's cache-miss input tokens. */
+    cacheMissTokens: number;
 }
 /** Exact today summary from the Platform usage API. */
 export interface PlatformToday {

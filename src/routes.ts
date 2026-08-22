@@ -31,6 +31,8 @@ export interface UsageRoutesDeps {
   ): Promise<ModelUsageResponse>
   /** 总览页范围数据：DeepSeek 开放平台（官方用量看板同源），非本地 session 统计。 */
   platformModelUsage(start: string, end: string, granularity: 'hour' | 'day'): Promise<ModelUsageResponse>
+  /** 插件元信息（当前 DSH 应用版本等）。 */
+  getMeta(): { dshVersion: string }
 }
 
 /** Cap on JSON request bodies. */
@@ -211,5 +213,14 @@ export function makeUsageRoutes(deps: UsageRoutesDeps): WebRoute[] {
     },
   }
 
-  return [state, refresh, loginStart, loginStatus, logout, modelUsage, modelUsageStream, modelUsagePlatform]
+  const meta: WebRoute = {
+    kind: 'exact',
+    path: '/api/deepseek-usage/meta',
+    handler: (req, res) => {
+      if (!guard(req, res, 'GET')) return
+      writeJson(res, 200, deps.getMeta())
+    },
+  }
+
+  return [state, refresh, loginStart, loginStatus, logout, modelUsage, modelUsageStream, modelUsagePlatform, meta]
 }

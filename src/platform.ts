@@ -111,14 +111,14 @@ interface CostPayload {
 function aggregateAmount(amount: AmountPayload): {
   tokens: number
   requests: number
-  modelUsage: Map<string, { requests: number; tokens: number }>
+  modelUsage: Map<string, { requests: number; tokens: number; cacheHitTokens: number; cacheMissTokens: number }>
 } {
-  const modelUsage = new Map<string, { requests: number; tokens: number }>()
+  const modelUsage = new Map<string, { requests: number; tokens: number; cacheHitTokens: number; cacheMissTokens: number }>()
   let tokens = 0
   let requests = 0
   for (const series of amount.series ?? []) {
     const model = series.model ?? 'unknown'
-    const entry = modelUsage.get(model) ?? { requests: 0, tokens: 0 }
+    const entry = modelUsage.get(model) ?? { requests: 0, tokens: 0, cacheHitTokens: 0, cacheMissTokens: 0 }
     for (const bucket of series.buckets ?? []) {
       const usage = bucket.usage
       if (!usage) continue
@@ -128,6 +128,8 @@ function aggregateAmount(amount: AmountPayload): {
       const bucketRequests = safeNumber(usage.REQUEST)
       entry.requests += bucketRequests
       entry.tokens += bucketTokens
+      entry.cacheHitTokens += safeNumber(usage.PROMPT_CACHE_HIT_TOKEN)
+      entry.cacheMissTokens += safeNumber(usage.PROMPT_CACHE_MISS_TOKEN)
       tokens += bucketTokens
       requests += bucketRequests
     }
@@ -388,12 +390,17 @@ export async function fetchPlatformSnapshot(token: string): Promise<PlatformSnap
   const historyAmountAgg = aggregateAmount(historyAmount)
   const historyCostAgg = aggregateCost(historyCost, currency)
 
-  const models = [...currentAmount.modelUsage.keys()].map(model => ({
-    model,
-    requests: currentAmount.modelUsage.get(model)?.requests ?? 0,
-    tokens: currentAmount.modelUsage.get(model)?.tokens ?? 0,
-    cost: currentCost.modelCosts.get(model) ?? 0,
-  })).sort((a, b) => b.cost - a.cost || b.tokens - a.tokens)
+  const models = [...currentAmount.modelUsage.keys()].map(model => {
+    const usage = currentAmount.modelUsage.get(model)
+    return {
+      model,
+      requests: usage?.requests ?? 0,
+      tokens: usage?.tokens ?? 0,
+      cost: currentCost.modelCosts.get(model) ?? 0,
+      cacheHitTokens: usage?.cacheHitTokens ?? 0,
+      cacheMissTokens: usage?.cacheMissTokens ?? 0,
+    }
+  }).sort((a, b) => b.cost - a.cost || b.tokens - a.tokens)
 
   // 模型范围动态从平台返回的用量数据收集，开放平台新增模型（如视觉模型）无需改代码即自动纳入。
   const modelNames = new Set<string>(['deepseek-v4-flash', 'deepseek-v4-pro'])

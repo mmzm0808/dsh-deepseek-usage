@@ -11,8 +11,9 @@ import type { WebServer } from '@deepseek-ai/dsh-host-webserver'
 import {
   closeSync, existsSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, writeFileSync,
 } from 'node:fs'
+import { createRequire } from 'node:module'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import z from 'schemastery'
 import { closePlatformLogin, readPlatformTokenFromBrowser, startPlatformLogin } from './login.js'
 import { fetchModelUsageSeries, fetchPlatformSnapshot } from './platform.js'
@@ -54,6 +55,35 @@ interface DesktopProfilesLike {
 function defaultDshHome(): string {
   return process.env.DSH_HOME ?? join(homedir(), '.dsh')
 }
+
+/** DSH 应用版本号（client 端显示在侧边栏 brand 下方）。 */
+const dshVersion = (() => {
+  if (typeof process.env.DSH_VERSION === 'string' && process.env.DSH_VERSION.length > 0) {
+    return process.env.DSH_VERSION
+  }
+  const req = createRequire(import.meta.url)
+  // DSH 仓库结构：<root>/vendor/cordis/package.json —— 由 cordis 的解析位置
+  // 反推仓库根，读 apps/web 的应用版本（与 client 构建同步）。
+  try {
+    const cordisPath = req.resolve('@deepseek-ai/cordis/package.json')
+    const root = join(dirname(cordisPath), '..', '..')
+    const webPkgPath = join(root, 'apps', 'web', 'package.json')
+    if (existsSync(webPkgPath)) {
+      const parsed = JSON.parse(readFileSync(webPkgPath, 'utf8')) as { version?: unknown }
+      if (typeof parsed.version === 'string' && parsed.version.length > 0) return parsed.version
+    }
+  } catch {
+    // 非 vendor 布局（pnpm 等）时走下一回退。
+  }
+  try {
+    const runtimePath = req.resolve('@deepseek-ai/dsh-client-runtime/package.json')
+    const parsed = JSON.parse(readFileSync(runtimePath, 'utf8')) as { version?: unknown }
+    if (typeof parsed.version === 'string' && parsed.version.length > 0) return parsed.version
+  } catch {
+    // 宿主未暴露 runtime 包时返回占位。
+  }
+  return 'unknown'
+})()
 
 /** Resolve plugin data directory: Desktop profile dir when available, otherwise DSH home. */
 function resolveDataDir(ctx: AppContext): string {
@@ -275,6 +305,7 @@ export function apply(ctx: AppContext, config: Config): void {
         getModelUsage,
         streamModelUsage,
         platformModelUsage,
+        getMeta: () => ({ dshVersion }),
       }).map(route => ctx.webServer.register(route))
       return () => { for (const dispose of routeDisposers) dispose() }
     },

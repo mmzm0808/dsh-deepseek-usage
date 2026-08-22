@@ -479,6 +479,7 @@ export function apply(ctx: ClientContext): void {
             <div class="${NS}-r0-row">
               <span class="${NS}-r0" data-field="r0-total" title="8月17日起累计涨价倍率">累计R0 --</span>
               <span class="${NS}-r0" data-field="r0-today" title="今日涨价倍率">今日R0 --</span>
+              <span class="${NS}-r0" data-field="hit-rate" title="今日该模型总体命中率（开放平台缓存数据）">命中率 --</span>
             </div>
             <div class="${NS}-balance-detail">
               <div class="item"><div class="k">赠金余额</div><div class="v" data-field="bonus">--</div></div>
@@ -571,6 +572,7 @@ export function apply(ctx: ClientContext): void {
     modelSelect: host.querySelector('[data-field="model-select"]') as HTMLSelectElement,
     r0Total: host.querySelector('[data-field="r0-total"]') as HTMLElement,
     r0Today: host.querySelector('[data-field="r0-today"]') as HTMLElement,
+    hitRate: host.querySelector('[data-field="hit-rate"]') as HTMLElement,
     bonus: host.querySelector('[data-field="bonus"]') as HTMLElement,
     totalCost: host.querySelector('[data-field="total-cost"]') as HTMLElement,
     cumulativeTokens: host.querySelector('[data-field="cumulative-tokens"]') as HTMLElement,
@@ -807,6 +809,20 @@ export function apply(ctx: ClientContext): void {
     stateFields.ballR0.dataset.tip = topModelData && topModelData.r0_today !== null
       ? `${shortModelName(topModel ?? selectedModel)} 今日 A2/A1 = ${toScientific(topModelData.a2_today ?? 0)} / ${toScientific(topModelData.a1)}`
       : ''
+
+    /* 今日所选模型的总体缓存命中率（开放平台数据）：命中 /（命中 + 未命中）。 */
+    const todayModel = state.today?.models.find(model => model.model === selectedModel)
+    const hitInput = todayModel ? todayModel.cacheHitTokens + todayModel.cacheMissTokens : 0
+    if (todayModel !== undefined && hitInput > 0) {
+      const hitPct = todayModel.cacheHitTokens / hitInput * 100
+      stateFields.hitRate.textContent = `命中率 ${hitPct.toFixed(2)}%`
+      stateFields.hitRate.dataset.tip = `今日输入缓存命中 ${compact(todayModel.cacheHitTokens)} / ${compact(hitInput)}（${hitPct.toFixed(2)}%）`
+    } else {
+      stateFields.hitRate.textContent = '命中率 --'
+      stateFields.hitRate.dataset.tip = todayModel === undefined
+        ? '今日该模型暂无开放平台用量'
+        : '今日该模型暂无输入缓存数据'
+    }
 
     if (currentRange === 'today') {
       const today = state.today
@@ -1390,6 +1406,7 @@ export function apply(ctx: ClientContext): void {
   })
   bindTooltip(stateFields.r0Total)
   bindTooltip(stateFields.r0Today)
+  bindTooltip(stateFields.hitRate)
   bindTooltip(stateFields.ballR0)
   host.querySelector('[data-action="close"]')?.addEventListener('click', () => toggle(false))
 
@@ -1455,6 +1472,54 @@ export function apply(ctx: ClientContext): void {
     id: 'dsh-deepseek-usage',
     order: 100,
   }, () => null))
+
+  /* ---------- DSH 版本号（侧边栏 brand 下方一行小字） ----------
+     只要装了本插件就自动显示：fetch /api/deepseek-usage/meta 拿宿主解析的
+     应用版本，作为 logoRow 内的换行项紧贴在 "DSH Local Build" brand 下方
+     （logoRow 开 flex-wrap，版本行 flex-basis:100% 独占一行）。rail 态
+     brand 不渲染，版本行跟着隐藏；React 重渲染会清掉注入节点，由
+     MutationObserver 幂等补注。 */
+  let dshVersion = ''
+  const ensureVersionLine = (): void => {
+    if (dshVersion.length === 0) return
+    const logoRow = document.querySelector('[class*="logoRow"]')
+    if (logoRow === null || !(logoRow instanceof HTMLElement)) return
+    const brand = logoRow.querySelector('button[class*="_brand"]')
+    const existing = logoRow.querySelector('[data-dsu-version]')
+    if (brand === null) {
+      if (existing !== null) existing.remove()
+      return
+    }
+    if (existing !== null) return
+    logoRow.style.flexWrap = 'wrap'
+    const line = document.createElement('div')
+    line.setAttribute('data-dsu-version', '')
+    line.textContent = 'DSH ' + dshVersion
+    line.style.cssText = [
+      'flex-basis:100%',
+      'max-width:100%',
+      'margin:0',
+      'padding:0 8px 0 12px',
+      'font-size:11px',
+      'line-height:16px',
+      'font-family:var(--ds-font-family-code, ui-monospace, monospace)',
+      'color:var(--dsw-alias-label-tertiary, rgba(255,255,255,.42))',
+      'letter-spacing:.02em',
+      'white-space:nowrap',
+    ].join(';')
+    logoRow.appendChild(line)
+  }
+  const versionObserver = new MutationObserver(() => ensureVersionLine())
+  versionObserver.observe(document.body, { childList: true, subtree: true })
+  void fetch('/api/deepseek-usage/meta', { headers: { accept: 'application/json' } })
+    .then(response => response.json())
+    .then((data) => {
+      if (typeof data?.dshVersion === 'string' && data.dshVersion.length > 0) {
+        dshVersion = data.dshVersion
+        ensureVersionLine()
+      }
+    })
+    .catch(() => {})
   const disposeUsageCard = ctx.slots.inject('ventus.settings.item', () => ctx.slots.register({
     name: 'ventus.settings.item',
     id: 'dsh-deepseek-usage',
@@ -1517,6 +1582,7 @@ export function apply(ctx: ClientContext): void {
     clearInterval(loginPollTimer)
     clearTimeout(pageTimer)
     clearTimeout(hourlyTrendTimer)
+    versionObserver.disconnect()
     disposeOverlay()
     disposeUsageCard()
     disposeVentusPage?.()

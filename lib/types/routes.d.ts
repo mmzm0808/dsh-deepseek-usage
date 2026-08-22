@@ -32,6 +32,10 @@ export interface UsageRoutesDeps {
     streamModelUsage(start: string, end: string, granularity: 'hour' | 'day', onSnapshot: (series: ModelUsageResponse['series']) => void): Promise<ModelUsageResponse>;
     /** 总览页范围数据：DeepSeek 开放平台（官方用量看板同源），非本地 session 统计。 */
     platformModelUsage(start: string, end: string, granularity: 'hour' | 'day'): Promise<ModelUsageResponse>;
+    /** 插件元信息（当前 DSH 应用版本等）。 */
+    getMeta(): {
+        dshVersion: string;
+    };
 }
 /** Build the route family. */
 export declare function makeUsageRoutes(deps: UsageRoutesDeps): WebRoute[];
