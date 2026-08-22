@@ -20,12 +20,17 @@ export interface VentusPrefs {
   cacheHit2Decimals: boolean
   /** When true, --dsh-chat-content-width becomes fluid (fills sidebar gap). */
   fluidConversationWidth: boolean
+  /** When true, the hero page (headline + composer) docks to the column bottom.
+      The theme styles the effect; this plugin owns the switch (body class
+      `theme-endfield-hero-dock`). */
+  heroDockBottom: boolean
 }
 
 export const DEFAULT_VENTUS_PREFS: VentusPrefs = {
   usageEnabled: true,
   cacheHit2Decimals: true,
   fluidConversationWidth: true,
+  heroDockBottom: true,
 }
 
 export function readVentusPrefs(): VentusPrefs {
@@ -72,6 +77,11 @@ function applyFluidWidth(enabled: boolean): void {
   root.style.setProperty('--dsh-chat-content-width', enabled ? '100%' : '748px')
 }
 
+/** The hero-dock switch is a body class the theme's stylesheet styles. */
+function applyHeroDock(enabled: boolean): void {
+  document.body.classList.toggle('theme-endfield-hero-dock', enabled)
+}
+
 /**
  * Apply Ventus display preferences to the live DOM and keep them applied as
  * React re-renders the stats line / conversation column.
@@ -85,6 +95,7 @@ export function applyVentusPrefs(): () => void {
   const apply = (): void => {
     if (current.cacheHit2Decimals) patchCacheHitText(document.body)
     applyFluidWidth(current.fluidConversationWidth)
+    applyHeroDock(current.heroDockBottom)
   }
 
   const ensureRoot = (): void => {
@@ -134,6 +145,7 @@ export function applyVentusPrefs(): () => void {
   observer = new MutationObserver(() => {
     if (current.cacheHit2Decimals) queuePatch()
     applyFluidWidth(current.fluidConversationWidth)
+    applyHeroDock(current.heroDockBottom)
   })
   observer.observe(document.body, { childList: true, subtree: true })
 

@@ -18,6 +18,10 @@ export interface VentusPrefs {
     cacheHit2Decimals: boolean;
     /** When true, --dsh-chat-content-width becomes fluid (fills sidebar gap). */
     fluidConversationWidth: boolean;
+    /** When true, the hero page (headline + composer) docks to the column bottom.
+        The theme styles the effect; this plugin owns the switch (body class
+        `theme-endfield-hero-dock`). */
+    heroDockBottom: boolean;
 }
 export declare const DEFAULT_VENTUS_PREFS: VentusPrefs;
 export declare function readVentusPrefs(): VentusPrefs;

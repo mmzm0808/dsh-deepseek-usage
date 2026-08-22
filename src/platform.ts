@@ -395,8 +395,12 @@ export async function fetchPlatformSnapshot(token: string): Promise<PlatformSnap
     cost: currentCost.modelCosts.get(model) ?? 0,
   })).sort((a, b) => b.cost - a.cost || b.tokens - a.tokens)
 
-  const TRACKED_MODELS = ['deepseek-v4-flash', 'deepseek-v4-pro']
-  const modelRatios = TRACKED_MODELS.map(model => buildModelRatio(
+  // 模型范围动态从平台返回的用量数据收集，开放平台新增模型（如视觉模型）无需改代码即自动纳入。
+  const modelNames = new Set<string>(['deepseek-v4-flash', 'deepseek-v4-pro'])
+  for (const mapName of [historyAmountAgg, sinceAmountAgg, currentAmount]) {
+    for (const model of mapName.modelUsage.keys()) modelNames.add(model)
+  }
+  const modelRatios = [...modelNames].map(model => buildModelRatio(
     model,
     historyAmountAgg.modelUsage.get(model)?.tokens ?? 0,
     historyCostAgg.modelCosts.get(model) ?? 0,
