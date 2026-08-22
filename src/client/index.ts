@@ -419,6 +419,10 @@ function aggregateSeries(series: ModelUsageSeries[], priceRatio: PriceRatio | nu
 
 /** Mount the floating widget. */
 export function apply(ctx: ClientContext): void {
+  /* 官方 index.html 声明 lang="en"，Edge 因此每次加载都提示翻译中文页面；
+     运行时改回 zh-CN（DOM 属性即可，无需改官方源码）。 */
+  if (document.documentElement.lang === 'en') document.documentElement.lang = 'zh-CN'
+
   let styleEl: HTMLStyleElement | null = null
   if (document.querySelector(`style[data-${NS}-css]`) === null) {
     styleEl = document.createElement('style')
