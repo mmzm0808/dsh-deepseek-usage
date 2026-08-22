@@ -1001,7 +1001,14 @@ export function apply(ctx: ClientContext): void {
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
         stateFields.footer.textContent = '已复制截图'
       } catch (clipboardError) {
-        stateFields.footer.textContent = '复制截图失败：' + (clipboardError instanceof Error ? clipboardError.message : String(clipboardError))
+        // 剪贴板写入偶发失败（页面焦点/权限时序），稍候重试一次再报错。
+        try {
+          await new Promise(resolve => setTimeout(resolve, 350))
+          await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+          stateFields.footer.textContent = '已复制截图'
+        } catch {
+          stateFields.footer.textContent = '复制截图失败：' + (clipboardError instanceof Error ? clipboardError.message : String(clipboardError))
+        }
       }
     } catch (error) {
       stateFields.footer.textContent = '截图失败：' + (error instanceof Error ? error.message : String(error))
@@ -1009,7 +1016,7 @@ export function apply(ctx: ClientContext): void {
       screenshotting = false
       if (button) {
         button.disabled = false
-        button.textContent = '📷 复制截图'
+        button.textContent = '截图'
       }
     }
   }
