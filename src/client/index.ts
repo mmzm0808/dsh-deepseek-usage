@@ -59,6 +59,7 @@ body:not([data-ds-dark-theme]) [data-${NS}] { --dsu-bg:#eef0f4; --dsu-panel:#fff
 .${NS}-body{ flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:14px; }
 .${NS}-section-title{ font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--dsu-muted); margin-bottom:8px; }
 .${NS}-balance{ background:linear-gradient(135deg,rgba(77,107,254,.18),rgba(124,92,252,.08)); border:1px solid rgba(77,107,254,.28); border-radius:var(--dsu-radius); padding:14px 16px; }
+.${NS}-source-state{ margin-left:6px; font-size:11px; color:var(--dsu-muted); }
 .${NS}-balance-top{ display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; font-size:12px; color:var(--dsu-muted); }
 .${NS}-balance-main{ display:flex; align-items:center; flex-wrap:nowrap; gap:8px; margin-bottom:10px; }
 .${NS}-model-label{ margin-left:auto; font-size:12px; color:var(--dsu-muted); white-space:nowrap; flex:none; }
@@ -477,9 +478,8 @@ export function apply(ctx: ClientContext): void {
           <div class="${NS}-section-title">账户</div>
           <div class="${NS}-balance">
             <div class="${NS}-balance-top">
-              <span>DeepSeek 开放平台</span>
+              <span>DeepSeek 开放平台<span class="${NS}-source-state" data-field="source">（未连接）</span></span>
               <span class="${NS}-pv-badge" data-field="pv-badge">--</span>
-              <span data-field="source">--</span>
             </div>
             <div class="${NS}-balance-main">
               <span class="${NS}-amount">--</span><span class="${NS}-amount-sub"></span>
@@ -753,7 +753,7 @@ export function apply(ctx: ClientContext): void {
   const render = (state: UsageState): void => {
     if (state.error) {
       ballValue.textContent = '--'
-      stateFields.source.textContent = '异常'
+      stateFields.source.textContent = '（异常）'
       stateFields.footer.textContent = state.error
       return
     }
@@ -763,7 +763,7 @@ export function apply(ctx: ClientContext): void {
       currency = balance.currency || 'CNY'
       const symbol = currency === 'USD' ? '$' : '¥'
       ballValue.textContent = `${symbol}${balance.balance.toFixed(2)}`
-      stateFields.source.textContent = '平台已连接'
+      stateFields.source.textContent = '（已连接）'
       stateFields.amount.textContent = `${symbol}${balance.balance.toFixed(2)}`
       stateFields.amountSub.textContent = currency
       stateFields.bonus.textContent = `${symbol}${balance.bonus_balance.toFixed(2)}`
@@ -773,7 +773,7 @@ export function apply(ctx: ClientContext): void {
       stateFields.cumulativeRequests.textContent = cumulative ? compact(cumulative.requests) : '--'
     } else {
       ballValue.textContent = '--'
-      stateFields.source.textContent = '无数据'
+      stateFields.source.textContent = '（无数据）'
       stateFields.amount.textContent = '--'
       stateFields.amountSub.textContent = ''
       stateFields.bonus.textContent = '--'
