@@ -9,7 +9,7 @@ import type { ModelUsageResponse, ModelUsageSeries, PriceRatio, UsageState } fro
 import html2canvas from 'html2canvas-pro'
 import { DeepSeekUsageSettingsCard } from './VentusSettingsCard.js'
 import { VentusSettingsPage } from './VentusSettingsPage.js'
-import { applyVentusPrefs, readVentusPrefs, VENTUS_PREFS_EVENT, type VentusPrefs } from './ventus-prefs.js'
+import { applyVentusPrefs, readVentusPrefs, setRealHitRate, VENTUS_PREFS_EVENT, type VentusPrefs } from './ventus-prefs.js'
 
 /** Minimal slot service face used by this plugin. */
 interface SlotsLike {
@@ -823,18 +823,22 @@ export function apply(ctx: ClientContext): void {
       ? `${shortModelName(topModel ?? selectedModel)} 今日 A2/A1 = ${toScientific(topModelData.a2_today ?? 0)} / ${toScientific(topModelData.a1)}`
       : ''
 
-    /* 今日所选模型的总体缓存命中率（开放平台数据）：命中 /（命中 + 未命中）。 */
+    /* 今日所选模型的总体缓存命中率（开放平台数据）：命中 /（命中 + 未命中）。
+       真实两位小数同时提供给 ventus-prefs 的 StatsLine 补丁（官方显示的是
+       整数近似，直接 toFixed 只会造出假 .00）。 */
     const todayModel = state.today?.models.find(model => model.model === selectedModel)
     const hitInput = todayModel ? todayModel.cacheHitTokens + todayModel.cacheMissTokens : 0
     if (todayModel !== undefined && hitInput > 0) {
       const hitPct = todayModel.cacheHitTokens / hitInput * 100
       stateFields.hitRate.textContent = `命中率 ${hitPct.toFixed(2)}%`
       stateFields.hitRate.dataset.tip = `今日输入缓存命中 ${compact(todayModel.cacheHitTokens)} / ${compact(hitInput)}（${hitPct.toFixed(2)}%）`
+      setRealHitRate(hitPct)
     } else {
       stateFields.hitRate.textContent = '命中率 --'
       stateFields.hitRate.dataset.tip = todayModel === undefined
         ? '今日该模型暂无开放平台用量'
         : '今日该模型暂无输入缓存数据'
+      setRealHitRate(null)
     }
 
     if (currentRange === 'today') {

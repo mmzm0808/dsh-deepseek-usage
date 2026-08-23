@@ -43,6 +43,14 @@ export function readVentusPrefs(): VentusPrefs {
   return { ...DEFAULT_VENTUS_PREFS }
 }
 
+/** 开放平台真实命中率（两位小数文本），由 usage 主模块在刷新状态时写入。 */
+let lastRealHitRate: string | null = null
+
+/** 记录最新真实命中率（今日该模型 命中/（命中+未命中））。无数据传 null。 */
+export function setRealHitRate(pct: number | null): void {
+  lastRealHitRate = pct === null ? null : pct.toFixed(2)
+}
+
 export function writeVentusPrefs(prefs: VentusPrefs): void {
   try {
     localStorage.setItem(VENTUS_PREFS_KEY, JSON.stringify(prefs))
@@ -64,8 +72,13 @@ function patchCacheHitText(root: ParentNode): void {
     const value = node.nodeValue
     if (value === null || !pattern.test(value)) continue
     node.nodeValue = value.replace(pattern, (_match, prefix: string, raw: string) => {
-      const percent = Number(raw)
-      return `${prefix}${Number.isFinite(percent) ? percent.toFixed(2) : raw}%`
+      /* 用真实数值替换：官方 StatsLine 的缓存命中是「整数百分比近似」
+         （roundedIntegerPercent 取整）——直接 toFixed(2) 只会造出假
+         「.00」。有开放平台真实数据（今日该模型 cacheHitTokens /
+         cacheMissTokens）时用真实两位小数；无数据时保留官方整数原样，
+         绝不把近似值伪装成两位小数。 */
+      if (lastRealHitRate !== null) return `${prefix}${lastRealHitRate}%`
+      return `${prefix}${raw}%`
     })
   }
 }
