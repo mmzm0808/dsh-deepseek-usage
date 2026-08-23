@@ -206,12 +206,17 @@ function toScientific(value: number): string {
   return `${mantissa.toFixed(2)}×10${expText}`
 }
 
-/** Return whether the current Beijing time is peak or valley. */
+/** Return whether the current Beijing time is peak or valley.
+    2026-08-23 起计费规则：高峰时段 = 北京时间 9:00-12:00、14:00-18:00；
+    空闲时段价格为高峰的一半；周末（周六/周日）全天统一按低谷价，
+    不再区分峰谷。 */
 function peakValley(): { text: '峰' | '谷'; cls: 'peak' | 'valley' } {
   const now = new Date()
-  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', hour: '2-digit', hour12: false }).formatToParts(now)
+  const parts = new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Shanghai', hour: '2-digit', hour12: false, weekday: 'short' }).formatToParts(now)
   const hour = Number(parts.find(part => part.type === 'hour')?.value ?? 0)
-  const peak = (hour >= 9 && hour < 12) || (hour >= 14 && hour < 18)
+  const weekday = parts.find(part => part.type === 'weekday')?.value ?? ''
+  const weekend = weekday === 'Sat' || weekday === 'Sun'
+  const peak = !weekend && ((hour >= 9 && hour < 12) || (hour >= 14 && hour < 18))
   return peak ? { text: '峰', cls: 'peak' } : { text: '谷', cls: 'valley' }
 }
 
@@ -427,6 +432,10 @@ export function apply(ctx: ClientContext): void {
   if (document.querySelector(`style[data-${NS}-css]`) === null) {
     styleEl = document.createElement('style')
     styleEl.dataset[`${NS}Css`] = ''
+    /* 带插件 id 的 data-plugin 标记（DSH 样式系统惯例）：
+       主题等插件按 data-plugin 精确清理各自样式，无主 style 可能被
+       误标/误删；显式声明归属后任何按插件 id 的清理都不会触碰它。 */
+    styleEl.dataset.plugin = 'dsh-deepseek-usage'
     styleEl.textContent = CSS
     document.head.appendChild(styleEl)
   }
