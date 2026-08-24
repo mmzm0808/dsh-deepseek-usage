@@ -295,8 +295,8 @@ export function apply(ctx: AppContext, config: Config): void {
 
   /** 每个活跃会话命中率 = cacheRead / (input + cacheRead + cacheWrite)，两位小数；
    *  latest 取事件时间最新的会话（通常即当前打开的会话）的值。 */
-  const getSessionHits = (): { items: Array<{ id: string; title: string; hit: string | null }>; latest: string | null } => {
-    const items: Array<{ id: string; title: string; hit: string | null }> = []
+  const getSessionHits = (): { items: Array<{ id: string; title: string; hit: string | null; promptTok: number; officialPct: number | null }>; latest: string | null } => {
+    const items: Array<{ id: string; title: string; hit: string | null; promptTok: number; officialPct: number | null }> = []
     let latestId: string | null = null
     let latestTime = -1
     for (const s of ctx.sessions.list()) {
@@ -333,7 +333,10 @@ export function apply(ctx: AppContext, config: Config): void {
           }
         }
       }
-      items.push({ id: s.id, title: ttl.slice(0, 40), hit })
+      // officialPct：官方 StatsLine 的取整命中率口径（四舍五入整数），
+      // 供 client 与 DOM 上的官方值配对；promptTok 供 tok 文本配对。
+      const officialPct = denom > 0 ? Math.round((read / denom) * 100) : null
+      items.push({ id: s.id, title: ttl.slice(0, 40), hit, promptTok: denom, officialPct })
       if (lastTime > latestTime) { latestTime = lastTime; latestId = s.id }
     }
     const byId = new Map(items.map(i => [i.id, i]))

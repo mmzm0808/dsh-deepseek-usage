@@ -42,6 +42,8 @@ export interface UsageRoutesDeps {
             id: string;
             title: string;
             hit: string | null;
+            promptTok: number;
+            officialPct: number | null;
         }>;
         latest: string | null;
     };

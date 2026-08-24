@@ -61,67 +61,59 @@ export function writeVentusPrefs(prefs: VentusPrefs): void {
 }
 
 /* ============================================================================
- * 底栏缓存命中注入 v3 —— 全新实现，与前两版完全不同，禁止复用旧方法。
+ * 底栏缓存命中注入 v4 —— host 真值 + DOM 配对，彻底消除 xx.00 伪精度。
  *
- * 旧方法（已彻底废弃，不得恢复）：
- *   v1：用 usage 面板的「今日该模型总体命中率」覆盖所有会话 → 全部同值。
- *   v2：host 汇总各会话 + client 按标题字符串匹配 → 标题不同源，匹配失败
- *       后回退官方值，看起来仍是同一个数。
+ * 弃用历史（禁止恢复）：
+ *   v1 用 usage 总览的开放平台今日命中率覆盖所有会话（全部同值）。
+ *   v2 host 汇总 + 标题字符串匹配（标题不同源，匹配失败回退官方值）。
+ *   v3 由官方取整命中率反解区间中值（区间中值常落在整数 → 恒 .00）。
  *
- * v3 原理（不依赖 host、不依赖标题匹配、不读 usage 面板数据）：
- *   官方 StatsLine 同一行里已经打印了本会话的真实 token 分量文本
- *   「输入 N tok · 输出 M tok」，其中输入 N 就是官方 billedInputTokens
- *   （uncachedInput + cacheRead + cacheWrite）。官方另给出取整命中率 P%。
- *   由 P 与 N 可反解 cacheRead 的整数区间，再取区间中值算出两位小数：
- *       cacheRead ≈ N * P/100，精度受 P 取整限制
- *   因此 v3 改为直接读同一行的 tok 数值 + 官方命中率，按本会话数据自算
- *   两位小数（每会话的 N/P 各不相同 → 结果天然各不相同）。
- *   若该行没有 tok 文本（无法自算），保留官方原值，绝不顶替。
- *
- * 硬约束（勿改）：
- *   1) 结果不得为 xx.00：小数位由本会话真实 tok 反解得到，若恰好落在整数
- *      则微调到区间中值，保证有效小数位。
- *   2) 每会话独立：只用该行自身文本，不跨会话取值、不取全局值。
+ * v4 原理：
+ *   host /api/deepseek-usage/session-hits 直接按每个会话的事件 usage 累加
+ *   cacheRead / (input + cacheRead + cacheWrite)，返回未取整的真实两位小数
+ *   （hit），同时返回该会话的 promptTok 与官方取整值 officialPct。
+ *   client 读官方统计行里的「输入 N tok」+「缓存命中 P%」，用 (P, N) 与
+ *   host 列表配对：officialPct 相同且 promptTok 与 N（官方 formatTokens
+ *   压缩过，按同样规则压缩后比较）一致 → 认定同一会话，写入 host 的真值。
+ *   配不上就保留官方原值，绝不顶替。真值来自各会话自身 token 分量，因此
+ *   逐会话不同，且小数位是真实计算结果而非区间估计。
  * ========================================================================== */
 
-/** 把「12.3K」「1.2M」「456」这类 token 文本解析成整数。 */
-function parseTokText(raw: string): number | null {
-  const m = /^([\d.]+)\s*([KMB])?$/i.exec(raw.trim())
-  if (m === null) return null
-  const base = Number(m[1])
-  if (!Number.isFinite(base)) return null
-  const unit = (m[2] ?? '').toUpperCase()
-  const mul = unit === 'K' ? 1e3 : unit === 'M' ? 1e6 : unit === 'B' ? 1e9 : 1
-  return Math.round(base * mul)
+interface HitItem {
+  id: string
+  title: string
+  hit: string | null
+  promptTok: number
+  officialPct: number | null
 }
 
-/**
- * 由本会话的「输入 tok 总量」与官方取整命中率反解两位小数命中率。
- * 官方 P 是四舍五入整数，真实值落在 [P-0.5, P+0.5)；用该区间与 tok
- * 量化格（1/N）交集的中值作为估计，保证两位小数有有效数字。
- */
-function refineHitRate(promptTok: number, officialPct: number): string | null {
-  if (promptTok <= 0 || officialPct < 0 || officialPct > 100) return null
-  const lo = Math.max(0, officialPct - 0.5)
-  const hi = Math.min(100, officialPct + 0.5)
-  // cacheRead 的可行整数范围（受 tok 量化限制）。
-  const readLo = Math.ceil((lo / 100) * promptTok)
-  const readHi = Math.floor((hi / 100) * promptTok)
-  if (readHi < readLo) return null
-  const readMid = Math.round((readLo + readHi) / 2)
-  let pct = (readMid / promptTok) * 100
-  // 约束 1：不得为 xx.00 —— 落在整数时朝区间内侧挪一个量化格。
-  if (Math.abs(pct - Math.round(pct)) < 0.005) {
-    const stepUp = readMid + 1 <= readHi ? readMid + 1 : readMid - 1 >= readLo ? readMid - 1 : null
-    if (stepUp !== null) pct = (stepUp / promptTok) * 100
-  }
-  if (pct <= 0 || pct > 100) return null
-  return pct.toFixed(2)
-}
-
+let hitItems: HitItem[] = []
+let hitTimer: number | null = null
 let hitObserver: MutationObserver | null = null
 
-/** 观察统计行，官方重渲染后立即重算重打（去重，避免死循环）。 */
+/** 复刻官方 formatTokens：<1000 原样，<1e6 用 K，其余 M；≥100 取整、否则 1 位小数。 */
+function formatTokensLikeOfficial(n: number): string {
+  const scaled = (v: number): string => (v >= 100 ? String(Math.round(v)) : String(Math.round(v * 10) / 10))
+  if (n < 1_000) return String(n)
+  if (n < 1_000_000) return `${scaled(n / 1_000)}K`
+  return `${scaled(n / 1_000_000)}M`
+}
+
+async function refreshHitItems(): Promise<void> {
+  try {
+    const res = await fetch('/api/deepseek-usage/session-hits', { cache: 'no-store' })
+    if (!res.ok) return
+    const data = await res.json() as { items?: unknown }
+    if (Array.isArray(data.items)) {
+      hitItems = data.items as HitItem[]
+      patchCacheHitText(document.body)
+    }
+  } catch {
+    // 服务暂不可达；下轮轮询重试。
+  }
+}
+
+/** 观察统计行：官方重渲染刷回原值后立即重打（去重避免死循环）。 */
 function ensureHitObserver(): void {
   if (hitObserver !== null) return
   let queued = false
@@ -134,30 +126,48 @@ function ensureHitObserver(): void {
   hitObserver.observe(document.body, { childList: true, subtree: true, characterData: true })
 }
 
+function ensureHitPolling(): void {
+  if (hitTimer !== null) return
+  void refreshHitItems()
+  ensureHitObserver()
+  hitTimer = window.setInterval(() => { void refreshHitItems() }, 5000)
+}
+
+/** 用 (官方取整值, 官方 tok 文本) 唯一配对本会话的真值。 */
+function matchTrueHit(officialPct: number, tokText: string): string | null {
+  const wanted = tokText.replace(/\s+/g, '').toUpperCase()
+  let found: string | null = null
+  for (const item of hitItems) {
+    if (item.hit === null || item.officialPct === null) continue
+    if (item.officialPct !== officialPct) continue
+    if (formatTokensLikeOfficial(item.promptTok).toUpperCase() !== wanted) continue
+    if (found !== null && found !== item.hit) return null // 多个会话无法区分，放弃
+    found = item.hit
+  }
+  return found
+}
+
 function patchCacheHitText(root: ParentNode): void {
+  if (hitItems.length === 0) return
   let docks: Element[] = []
   try { docks = Array.from(root.querySelectorAll('[data-slot="conversation.composer.dock"]')) } catch { return }
   for (const dock of docks) {
-    const line = (dock.textContent ?? '')
-    // 官方同一行：「缓存命中 P%」与「输入 N tok · 输出 M tok」。
+    const line = dock.textContent ?? ''
     const hitM = /缓存命中\s*([\d.]+)%/.exec(line)
     const tokM = /输入\s*([\d.]+\s*[KMB]?)\s*tok/i.exec(line)
     if (hitM === null || tokM === null) continue
-    const officialPct = Number(hitM[1])
-    const promptTok = parseTokText(tokM[1])
-    if (!Number.isFinite(officialPct) || promptTok === null) continue
-    const refined = refineHitRate(promptTok, officialPct)
-    if (refined === null || refined === hitM[1]) continue
-    // 只改命中率那一个文本节点。
+    const shown = hitM[1]
+    const officialPct = Math.round(Number(shown))
+    if (!Number.isFinite(officialPct)) continue
+    const truth = matchTrueHit(officialPct, tokM[1])
+    if (truth === null || truth === shown) continue
     const walker = document.createTreeWalker(dock, NodeFilter.SHOW_TEXT)
     while (walker.nextNode()) {
       const node = walker.currentNode as Text
       const value = node.nodeValue
       if (value === null) continue
-      const local = /(缓存命中\s*)([\d.]+)(%)/.exec(value)
-      if (local === null) continue
-      if (local[2] === refined) break
-      node.nodeValue = value.replace(/(缓存命中\s*)([\d.]+)(%)/, `$1${refined}$3`)
+      if (!/缓存命中\s*[\d.]+%/.test(value)) continue
+      node.nodeValue = value.replace(/(缓存命中\s*)([\d.]+)(%)/, `$1${truth}$3`)
       break
     }
   }
@@ -187,7 +197,7 @@ export function applyVentusPrefs(): () => void {
 
   const apply = (): void => {
     if (current.cacheHit2Decimals) {
-      ensureHitObserver()
+      ensureHitPolling()
       patchCacheHitText(document.body)
     }
     applyFluidWidth(current.fluidConversationWidth)
