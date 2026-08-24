@@ -5,6 +5,7 @@
  */
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver';
 import type { ModelUsageResponse, UsageState } from './protocol.js';
+import type { VentusUpdateApplyResult, VentusUpdateList } from './ventus-update.js';
 /** Dependencies the routes need from the plugin host. */
 export interface UsageRoutesDeps {
     /** Build the latest state snapshot. */
@@ -47,6 +48,10 @@ export interface UsageRoutesDeps {
         }>;
         latest: string | null;
     };
+    /** Ventus 整合包更新检查列表（远程提交 + 本地已装子插件）。 */
+    getVentusUpdateList(): Promise<VentusUpdateList>;
+    /** 按勾选执行整合包子插件选择性更新/安装。 */
+    applyVentusUpdate(selected: string[]): Promise<VentusUpdateApplyResult>;
 }
 /** Build the route family. */
 export declare function makeUsageRoutes(deps: UsageRoutesDeps): WebRoute[];

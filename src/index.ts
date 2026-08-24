@@ -20,6 +20,7 @@ import { fetchModelUsageSeries, fetchPlatformSnapshot } from './platform.js'
 import type { ModelUsageResponse, PlatformSnapshot } from './protocol.js'
 import { makeUsageRoutes } from './routes.js'
 import { fetchSessionModelUsageSeries, type SessionPersistenceLike, type SessionsLike } from './session-usage.js'
+import { applyVentusUpdate, getVentusUpdateList } from './ventus-update.js'
 
 /** Stable cordis plugin name (matches cordis.patch.yml insert id). */
 export const name = 'deepseek-usage'
@@ -359,6 +360,8 @@ export function apply(ctx: AppContext, config: Config): void {
         platformModelUsage,
         getMeta: () => ({ dshVersion }),
         getSessionHits,
+        getVentusUpdateList,
+        applyVentusUpdate,
       }).map(route => ctx.webServer.register(route))
       return () => { for (const dispose of routeDisposers) dispose() }
     },

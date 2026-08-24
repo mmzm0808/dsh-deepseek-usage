@@ -7,6 +7,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { WebRoute } from '@deepseek-ai/dsh-host-webserver'
 import type { ModelUsageResponse, UsageState } from './protocol.js'
+import type { VentusUpdateApplyResult, VentusUpdateList } from './ventus-update.js'
 
 /** Dependencies the routes need from the plugin host. */
 export interface UsageRoutesDeps {
@@ -35,6 +36,10 @@ export interface UsageRoutesDeps {
   getMeta(): { dshVersion: string }
   /** 每个活跃会话的自算缓存命中率（两位小数字符串，无数据为 null）与最新活跃会话的值。 */
   getSessionHits(): { items: Array<{ id: string; title: string; hit: string | null; promptTok: number; officialPct: number | null }>; latest: string | null }
+  /** Ventus 整合包更新检查列表（远程提交 + 本地已装子插件）。 */
+  getVentusUpdateList(): Promise<VentusUpdateList>
+  /** 按勾选执行整合包子插件选择性更新/安装。 */
+  applyVentusUpdate(selected: string[]): Promise<VentusUpdateApplyResult>
 }
 
 /** Cap on JSON request bodies. */
@@ -233,5 +238,43 @@ export function makeUsageRoutes(deps: UsageRoutesDeps): WebRoute[] {
     },
   }
 
-  return [state, refresh, loginStart, loginStatus, logout, modelUsage, modelUsageStream, modelUsagePlatform, meta, sessionHits]
+  const ventusUpdateList: WebRoute = {
+    kind: 'exact',
+    path: '/api/deepseek-usage/ventus-update/list',
+    handler: async (req, res) => {
+      if (!guard(req, res, 'GET')) return
+      try {
+        writeJson(res, 200, await deps.getVentusUpdateList())
+      } catch (error) {
+        writeJson(res, 500, { ok: false, error: error instanceof Error ? error.message : String(error) })
+      }
+    },
+  }
+
+  const ventusUpdateApply: WebRoute = {
+    kind: 'exact',
+    path: '/api/deepseek-usage/ventus-update/apply',
+    handler: async (req, res) => {
+      if (!guard(req, res, 'POST')) return
+      try {
+        const chunks: Buffer[] = []
+        for await (const chunk of req) {
+          chunks.push(chunk as Buffer)
+          if (chunks.reduce((sum, c) => sum + c.length, 0) > MAX_JSON_BODY_BYTES) {
+            writeJson(res, 413, { error: 'payload too large' })
+            return
+          }
+        }
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}') as { selected?: unknown }
+        const selected = Array.isArray(body.selected)
+          ? body.selected.filter((v): v is string => typeof v === 'string')
+          : []
+        writeJson(res, 200, await deps.applyVentusUpdate(selected))
+      } catch (error) {
+        writeJson(res, 500, { ok: false, updated: [], sha: null, bundledCount: 0, error: error instanceof Error ? error.message : String(error) })
+      }
+    },
+  }
+
+  return [state, refresh, loginStart, loginStatus, logout, modelUsage, modelUsageStream, modelUsagePlatform, meta, sessionHits, ventusUpdateList, ventusUpdateApply]
 }
