@@ -60,26 +60,51 @@ export function writeVentusPrefs(prefs: VentusPrefs): void {
   window.dispatchEvent(new CustomEvent<VentusPrefs>(VENTUS_PREFS_EVENT, { detail: prefs }))
 }
 
-function patchCacheHitText(root: ParentNode): void {
-  const pattern = /(缓存命中\s*)(\d+(?:\.\d+)?)%/u
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-  const textNodes: Text[] = []
-  while (walker.nextNode()) {
-    const node = walker.currentNode
-    if (node.nodeType === Node.TEXT_NODE) textNodes.push(node as Text)
+/* 底栏缓存命中注入 —— usage 插件功能，永久保留，勿改回。
+ * 官方 StatsLine 显示「整数近似」命中率。本功能改由插件自算每会话真实
+ * 命中率：host /api/deepseek-usage/session-hits 按每个活跃会话的事件 usage
+ * 计算 cacheRead/(input+cacheRead+cacheWrite) 的两位小数，latest 字段是
+ * 最近有活动的会话（即当前打开的会话）。客户端把该值注入当前会话统计行。
+ * 禁止改回：用今日总体值覆盖（会导致所有会话清一色同值）、补 .00
+ * （假精度）、做成 no-op（功能失效）。 */
+let sessionHitValue: string | null = null
+let sessionHitTimer: number | null = null
+
+async function refreshSessionHit(): Promise<void> {
+  try {
+    const res = await fetch('/api/deepseek-usage/session-hits', { cache: 'no-store' })
+    if (!res.ok) return
+    const data = await res.json() as { latest?: unknown }
+    if (typeof data.latest === 'string' && data.latest !== '') {
+      sessionHitValue = data.latest
+      patchCacheHitText(document.body)
+    }
+  } catch {
+    // 服务暂不可达；下轮轮询重试。
   }
-  for (const node of textNodes) {
-    const value = node.nodeValue
-    if (value === null || !pattern.test(value)) continue
-    node.nodeValue = value.replace(pattern, (_match, prefix: string, raw: string) => {
-      /* 用真实数值替换：官方 StatsLine 的缓存命中是「整数百分比近似」
-         （roundedIntegerPercent 取整）——直接 toFixed(2) 只会造出假
-         「.00」。有开放平台真实数据（今日该模型 cacheHitTokens /
-         cacheMissTokens）时用真实两位小数；无数据时保留官方整数原样，
-         绝不把近似值伪装成两位小数。 */
-      if (lastRealHitRate !== null) return `${prefix}${lastRealHitRate}%`
-      return `${prefix}${raw}%`
-    })
+}
+
+function ensureSessionHitPolling(): void {
+  if (sessionHitTimer !== null) return
+  void refreshSessionHit()
+  sessionHitTimer = window.setInterval(() => { void refreshSessionHit() }, 5000)
+}
+
+function patchCacheHitText(root: ParentNode): void {
+  if (sessionHitValue === null) return
+  const pattern = /(缓存命中\s*)(\d+(?:\.\d+)?)%/u
+  // 只替换当前会话统计行（官方 composer dock slot 容器）。
+  let hosts: Element[] = []
+  try { hosts = Array.from(root.querySelectorAll('[data-slot="conversation.composer.dock"]')) } catch { return }
+  for (const host of hosts) {
+    const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
+    const nodes: Text[] = []
+    while (walker.nextNode()) nodes.push(walker.currentNode as Text)
+    for (const node of nodes) {
+      const value = node.nodeValue
+      if (value === null || !pattern.test(value)) continue
+      node.nodeValue = value.replace(pattern, (_match, prefix: string) => `${prefix}${sessionHitValue}%`)
+    }
   }
 }
 
@@ -106,7 +131,10 @@ export function applyVentusPrefs(): () => void {
   let retryTimer: ReturnType<typeof setTimeout> | undefined
 
   const apply = (): void => {
-    if (current.cacheHit2Decimals) patchCacheHitText(document.body)
+    if (current.cacheHit2Decimals) {
+      ensureSessionHitPolling()
+      patchCacheHitText(document.body)
+    }
     applyFluidWidth(current.fluidConversationWidth)
     applyHeroDock(current.heroDockBottom)
   }

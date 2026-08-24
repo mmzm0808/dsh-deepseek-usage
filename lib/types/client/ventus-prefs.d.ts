@@ -25,6 +25,8 @@ export interface VentusPrefs {
 }
 export declare const DEFAULT_VENTUS_PREFS: VentusPrefs;
 export declare function readVentusPrefs(): VentusPrefs;
+/** 记录最新真实命中率（今日该模型 命中/（命中+未命中））。无数据传 null。 */
+export declare function setRealHitRate(pct: number | null): void;
 export declare function writeVentusPrefs(prefs: VentusPrefs): void;
 /**
  * Apply Ventus display preferences to the live DOM and keep them applied as

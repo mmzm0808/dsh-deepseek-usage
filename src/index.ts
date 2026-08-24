@@ -292,6 +292,34 @@ export function apply(ctx: AppContext, config: Config): void {
     return fetchModelUsageSeries(token, start, end, granularity)
   }
 
+
+  /** 每个活跃会话命中率 = cacheRead / (input + cacheRead + cacheWrite)，两位小数；
+   *  latest 取事件时间最新的会话（通常即当前打开的会话）的值。 */
+  const getSessionHits = (): { hits: Record<string, string | null>; latest: string | null } => {
+    const hits: Record<string, string | null> = {}
+    let latestId: string | null = null
+    let latestTime = -1
+    for (const s of ctx.sessions.list()) {
+      let input = 0
+      let read = 0
+      let write = 0
+      let lastTime = -1
+      for (const ev of s.events) {
+        const u = (ev as { data?: { usage?: { inputTokens?: number; cacheReadTokens?: number; cacheWriteTokens?: number } } })?.data?.usage
+        if (u) {
+          input += u.inputTokens ?? 0
+          read += u.cacheReadTokens ?? 0
+          write += u.cacheWriteTokens ?? 0
+        }
+        if (typeof (ev as { time?: number })?.time === 'number' && (ev.time as number) > lastTime) lastTime = ev.time as number
+      }
+      const denom = input + read + write
+      hits[s.id] = denom > 0 ? ((read / denom) * 100).toFixed(2) : null
+      if (lastTime > latestTime) { latestTime = lastTime; latestId = s.id }
+    }
+    return { hits, latest: latestId === null ? null : hits[latestId] ?? null }
+  }
+
   const disposers: Array<() => void> = []
 
   disposers.push(ctx.effect(
@@ -306,6 +334,7 @@ export function apply(ctx: AppContext, config: Config): void {
         streamModelUsage,
         platformModelUsage,
         getMeta: () => ({ dshVersion }),
+        getSessionHits,
       }).map(route => ctx.webServer.register(route))
       return () => { for (const dispose of routeDisposers) dispose() }
     },

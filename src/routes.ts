@@ -33,6 +33,8 @@ export interface UsageRoutesDeps {
   platformModelUsage(start: string, end: string, granularity: 'hour' | 'day'): Promise<ModelUsageResponse>
   /** 插件元信息（当前 DSH 应用版本等）。 */
   getMeta(): { dshVersion: string }
+  /** 每个活跃会话的自算缓存命中率（两位小数字符串，无数据为 null）与最新活跃会话的值。 */
+  getSessionHits(): { hits: Record<string, string | null>; latest: string | null }
 }
 
 /** Cap on JSON request bodies. */
@@ -222,5 +224,14 @@ export function makeUsageRoutes(deps: UsageRoutesDeps): WebRoute[] {
     },
   }
 
-  return [state, refresh, loginStart, loginStatus, logout, modelUsage, modelUsageStream, modelUsagePlatform, meta]
+  const sessionHits: WebRoute = {
+    kind: 'exact',
+    path: '/api/deepseek-usage/session-hits',
+    handler: (req, res) => {
+      if (!guard(req, res, 'GET')) return
+      writeJson(res, 200, deps.getSessionHits())
+    },
+  }
+
+  return [state, refresh, loginStart, loginStatus, logout, modelUsage, modelUsageStream, modelUsagePlatform, meta, sessionHits]
 }
