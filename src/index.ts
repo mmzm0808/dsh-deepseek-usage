@@ -315,17 +315,25 @@ export function apply(ctx: AppContext, config: Config): void {
       }
       const denom = input + read + write
       const hit = denom > 0 ? ((read / denom) * 100).toFixed(2) : null
-      // 标题：首条用户文本（与官方自动标题通常同源），用于 client 在 DOM
-      // 里把统计行与会话精确配对。
+      // 标题：会话 log 中的 session/title 事件（官方命名/自动命名落库的
+      // 标题，与客户端 header 显示的是同一来源）；缺失时回退首条用户文本。
       let ttl = ''
       for (const ev of s.events) {
-        const evt = ev as { type?: string; data?: { content?: Array<{ type?: string; text?: string }> } }
-        if (evt?.type === 'user/message') {
-          const text = (evt.data?.content ?? []).map(c => c.text ?? '').join(' ').trim()
-          if (text !== '') { ttl = text; break }
+        const evt = ev as { type?: string; data?: { title?: string; content?: Array<{ type?: string; text?: string }> } }
+        if (evt?.type === 'session/title' && typeof evt.data?.title === 'string' && evt.data.title.trim() !== '') {
+          ttl = evt.data.title.trim()
         }
       }
-      items.push({ id: s.id, title: ttl.slice(0, 24), hit })
+      if (ttl === '') {
+        for (const ev of s.events) {
+          const evt = ev as { type?: string; data?: { content?: Array<{ type?: string; text?: string }> } }
+          if (evt?.type === 'user/message') {
+            const text = (evt.data?.content ?? []).map(c => c.text ?? '').join(' ').trim()
+            if (text !== '') { ttl = text; break }
+          }
+        }
+      }
+      items.push({ id: s.id, title: ttl.slice(0, 40), hit })
       if (lastTime > latestTime) { latestTime = lastTime; latestId = s.id }
     }
     const byId = new Map(items.map(i => [i.id, i]))
