@@ -9,6 +9,6 @@
 interface VentusSettingsPageProps {
     renderSlot: (name: string, props: Record<string, unknown>) => unknown;
 }
-/** Render the Ventus settings page: one stacked card per Ventus-series plugin. */
+/** Render the Ventus settings page: 更新徽标 + 每个 Ventus 插件一张卡片。 */
 export declare function VentusSettingsPage(props: VentusSettingsPageProps): unknown;
 export {};

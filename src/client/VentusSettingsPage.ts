@@ -7,6 +7,7 @@
  */
 
 import { createElement } from 'react'
+import { VentusUpdateBadge } from './VentusUpdateBadge.js'
 
 /** Minimal props for the settings section page with a child slot. */
 interface VentusSettingsPageProps {
@@ -22,7 +23,17 @@ const pageStyle: Record<string, string> = {
   gap: '6px',
 }
 
-/** Render the Ventus settings page: one stacked card per Ventus-series plugin. */
+const headerStyle: Record<string, string> = {
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'flex-end',
+  padding: '0 2px 6px',
+}
+
+/** Render the Ventus settings page: 更新徽标 + 每个 Ventus 插件一张卡片。 */
 export function VentusSettingsPage(props: VentusSettingsPageProps): unknown {
-  return createElement('ul', { style: pageStyle }, props.renderSlot('ventus.settings.item', {}))
+  return createElement('div', null,
+    createElement('div', { style: headerStyle }, createElement(VentusUpdateBadge, null)),
+    createElement('ul', { style: pageStyle }, props.renderSlot('ventus.settings.item', {})),
+  )
 }
