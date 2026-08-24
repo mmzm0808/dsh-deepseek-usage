@@ -84,9 +84,26 @@ async function refreshSessionHit(): Promise<void> {
   }
 }
 
+let sessionHitObserver: MutationObserver | null = null
+
+/** 官方 React 会不断重建统计行文本节点，把注入刷回官方值。
+ *  用 MutationObserver 在文本被改回时立即重打（0 防抖，去重避免死循环）。 */
+function ensureHitRepatch(): void {
+  if (sessionHitObserver !== null) return
+  let queued = false
+  const flush = (): void => { queued = false; patchCacheHitText(document.body) }
+  sessionHitObserver = new MutationObserver(() => {
+    if (queued) return
+    queued = true
+    queueMicrotask(flush)
+  })
+  sessionHitObserver.observe(document.body, { childList: true, subtree: true, characterData: true })
+}
+
 function ensureSessionHitPolling(): void {
   if (sessionHitTimer !== null) return
   void refreshSessionHit()
+  ensureHitRepatch()
   sessionHitTimer = window.setInterval(() => { void refreshSessionHit() }, 5000)
 }
 
