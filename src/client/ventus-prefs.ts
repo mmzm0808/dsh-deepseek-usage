@@ -67,16 +67,16 @@ export function writeVentusPrefs(prefs: VentusPrefs): void {
  * 最近有活动的会话（即当前打开的会话）。客户端把该值注入当前会话统计行。
  * 禁止改回：用今日总体值覆盖（会导致所有会话清一色同值）、补 .00
  * （假精度）、做成 no-op（功能失效）。 */
-let sessionHitValue: string | null = null
+let sessionHitItems: Array<{ id: string; title: string; hit: string | null }> = []
 let sessionHitTimer: number | null = null
 
 async function refreshSessionHit(): Promise<void> {
   try {
     const res = await fetch('/api/deepseek-usage/session-hits', { cache: 'no-store' })
     if (!res.ok) return
-    const data = await res.json() as { latest?: unknown }
-    if (typeof data.latest === 'string' && data.latest !== '') {
-      sessionHitValue = data.latest
+    const data = await res.json() as { items?: unknown }
+    if (Array.isArray(data.items)) {
+      sessionHitItems = data.items as Array<{ id: string; title: string; hit: string | null }>
       patchCacheHitText(document.body)
     }
   } catch {
@@ -90,20 +90,45 @@ function ensureSessionHitPolling(): void {
   sessionHitTimer = window.setInterval(() => { void refreshSessionHit() }, 5000)
 }
 
+/** 在 items 中找与面板标题唯一匹配的会话命中率；匹配不到返回 null（保留官方原样）。 */
+function matchSessionHit(title: string): string | null {
+  const t1 = title.trim()
+  if (t1 === '' || sessionHitItems.length === 0) return null
+  let found: string | null = null
+  for (const item of sessionHitItems) {
+    if (item.title === '' || item.hit === null) continue
+    if (t1.includes(item.title) || item.title.includes(t1)) {
+      if (found !== null) return null // 非唯一，放弃
+      found = item.hit
+    }
+  }
+  return found
+}
+
 function patchCacheHitText(root: ParentNode): void {
-  if (sessionHitValue === null) return
   const pattern = /(缓存命中\s*)(\d+(?:\.\d+)?)%/u
-  // 只替换当前会话统计行（官方 composer dock slot 容器）。
-  let hosts: Element[] = []
-  try { hosts = Array.from(root.querySelectorAll('[data-slot="conversation.composer.dock"]')) } catch { return }
-  for (const host of hosts) {
-    const walker = document.createTreeWalker(host, NodeFilter.SHOW_TEXT)
+  // 每个 composer dock 统计行属于一个会话面板（[data-slot="conversation"]）。
+  // 用面板标题与 host 下发的每会话 titles 精确配对，只替换本会话自己的
+  // 两位小数命中率；配不上就保留官方原样，绝不拿别的会话/总体值顶替。
+  let docks: Element[] = []
+  try { docks = Array.from(root.querySelectorAll('[data-slot="conversation.composer.dock"]')) } catch { return }
+  for (const dock of docks) {
+    let pane: Element | null = dock.parentElement
+    while (pane !== null && pane.getAttribute('data-slot') !== 'conversation') pane = pane.parentElement
+    let panelTitle = ''
+    if (pane !== null) {
+      const header = pane.querySelector('[data-slot="conversation.session.header"]')
+      panelTitle = (header?.textContent ?? '').trim()
+    }
+    const hit = matchSessionHit(panelTitle)
+    if (hit === null) continue
+    const walker = document.createTreeWalker(dock, NodeFilter.SHOW_TEXT)
     const nodes: Text[] = []
     while (walker.nextNode()) nodes.push(walker.currentNode as Text)
     for (const node of nodes) {
       const value = node.nodeValue
       if (value === null || !pattern.test(value)) continue
-      node.nodeValue = value.replace(pattern, (_match, prefix: string) => `${prefix}${sessionHitValue}%`)
+      node.nodeValue = value.replace(pattern, (_m, prefix: string) => `${prefix}${hit}%`)
     }
   }
 }

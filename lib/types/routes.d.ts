@@ -38,7 +38,11 @@ export interface UsageRoutesDeps {
     };
     /** 每个活跃会话的自算缓存命中率（两位小数字符串，无数据为 null）与最新活跃会话的值。 */
     getSessionHits(): {
-        hits: Record<string, string | null>;
+        items: Array<{
+            id: string;
+            title: string;
+            hit: string | null;
+        }>;
         latest: string | null;
     };
 }

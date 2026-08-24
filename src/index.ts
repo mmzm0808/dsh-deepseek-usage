@@ -295,8 +295,8 @@ export function apply(ctx: AppContext, config: Config): void {
 
   /** 每个活跃会话命中率 = cacheRead / (input + cacheRead + cacheWrite)，两位小数；
    *  latest 取事件时间最新的会话（通常即当前打开的会话）的值。 */
-  const getSessionHits = (): { hits: Record<string, string | null>; latest: string | null } => {
-    const hits: Record<string, string | null> = {}
+  const getSessionHits = (): { items: Array<{ id: string; title: string; hit: string | null }>; latest: string | null } => {
+    const items: Array<{ id: string; title: string; hit: string | null }> = []
     let latestId: string | null = null
     let latestTime = -1
     for (const s of ctx.sessions.list()) {
@@ -314,10 +314,23 @@ export function apply(ctx: AppContext, config: Config): void {
         if (typeof (ev as { time?: number })?.time === 'number' && (ev.time as number) > lastTime) lastTime = ev.time as number
       }
       const denom = input + read + write
-      hits[s.id] = denom > 0 ? ((read / denom) * 100).toFixed(2) : null
+      const hit = denom > 0 ? ((read / denom) * 100).toFixed(2) : null
+      // 标题：首条用户文本（与官方自动标题通常同源），用于 client 在 DOM
+      // 里把统计行与会话精确配对。
+      let ttl = ''
+      for (const ev of s.events) {
+        const evt = ev as { type?: string; data?: { content?: Array<{ type?: string; text?: string }> } }
+        if (evt?.type === 'user/message') {
+          const text = (evt.data?.content ?? []).map(c => c.text ?? '').join(' ').trim()
+          if (text !== '') { ttl = text; break }
+        }
+      }
+      items.push({ id: s.id, title: ttl.slice(0, 24), hit })
       if (lastTime > latestTime) { latestTime = lastTime; latestId = s.id }
     }
-    return { hits, latest: latestId === null ? null : hits[latestId] ?? null }
+    const byId = new Map(items.map(i => [i.id, i]))
+    const latestHit = latestId === null ? null : byId.get(latestId)?.hit ?? null
+    return { items, latest: latestHit }
   }
 
   const disposers: Array<() => void> = []

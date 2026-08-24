@@ -34,7 +34,7 @@ export interface UsageRoutesDeps {
   /** 插件元信息（当前 DSH 应用版本等）。 */
   getMeta(): { dshVersion: string }
   /** 每个活跃会话的自算缓存命中率（两位小数字符串，无数据为 null）与最新活跃会话的值。 */
-  getSessionHits(): { hits: Record<string, string | null>; latest: string | null }
+  getSessionHits(): { items: Array<{ id: string; title: string; hit: string | null }>; latest: string | null }
 }
 
 /** Cap on JSON request bodies. */
