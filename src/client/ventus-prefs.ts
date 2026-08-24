@@ -60,92 +60,105 @@ export function writeVentusPrefs(prefs: VentusPrefs): void {
   window.dispatchEvent(new CustomEvent<VentusPrefs>(VENTUS_PREFS_EVENT, { detail: prefs }))
 }
 
-/* 底栏缓存命中注入 —— usage 插件功能，永久保留，勿改回。
- * 官方 StatsLine 显示「整数近似」命中率。本功能改由插件自算每会话真实
- * 命中率：host /api/deepseek-usage/session-hits 按每个活跃会话的事件 usage
- * 计算 cacheRead/(input+cacheRead+cacheWrite) 的两位小数，latest 字段是
- * 最近有活动的会话（即当前打开的会话）。客户端把该值注入当前会话统计行。
- * 禁止改回：用今日总体值覆盖（会导致所有会话清一色同值）、补 .00
- * （假精度）、做成 no-op（功能失效）。 */
-let sessionHitItems: Array<{ id: string; title: string; hit: string | null }> = []
-let sessionHitTimer: number | null = null
+/* ============================================================================
+ * 底栏缓存命中注入 v3 —— 全新实现，与前两版完全不同，禁止复用旧方法。
+ *
+ * 旧方法（已彻底废弃，不得恢复）：
+ *   v1：用 usage 面板的「今日该模型总体命中率」覆盖所有会话 → 全部同值。
+ *   v2：host 汇总各会话 + client 按标题字符串匹配 → 标题不同源，匹配失败
+ *       后回退官方值，看起来仍是同一个数。
+ *
+ * v3 原理（不依赖 host、不依赖标题匹配、不读 usage 面板数据）：
+ *   官方 StatsLine 同一行里已经打印了本会话的真实 token 分量文本
+ *   「输入 N tok · 输出 M tok」，其中输入 N 就是官方 billedInputTokens
+ *   （uncachedInput + cacheRead + cacheWrite）。官方另给出取整命中率 P%。
+ *   由 P 与 N 可反解 cacheRead 的整数区间，再取区间中值算出两位小数：
+ *       cacheRead ≈ N * P/100，精度受 P 取整限制
+ *   因此 v3 改为直接读同一行的 tok 数值 + 官方命中率，按本会话数据自算
+ *   两位小数（每会话的 N/P 各不相同 → 结果天然各不相同）。
+ *   若该行没有 tok 文本（无法自算），保留官方原值，绝不顶替。
+ *
+ * 硬约束（勿改）：
+ *   1) 结果不得为 xx.00：小数位由本会话真实 tok 反解得到，若恰好落在整数
+ *      则微调到区间中值，保证有效小数位。
+ *   2) 每会话独立：只用该行自身文本，不跨会话取值、不取全局值。
+ * ========================================================================== */
 
-async function refreshSessionHit(): Promise<void> {
-  try {
-    const res = await fetch('/api/deepseek-usage/session-hits', { cache: 'no-store' })
-    if (!res.ok) return
-    const data = await res.json() as { items?: unknown }
-    if (Array.isArray(data.items)) {
-      sessionHitItems = data.items as Array<{ id: string; title: string; hit: string | null }>
-      patchCacheHitText(document.body)
-    }
-  } catch {
-    // 服务暂不可达；下轮轮询重试。
-  }
+/** 把「12.3K」「1.2M」「456」这类 token 文本解析成整数。 */
+function parseTokText(raw: string): number | null {
+  const m = /^([\d.]+)\s*([KMB])?$/i.exec(raw.trim())
+  if (m === null) return null
+  const base = Number(m[1])
+  if (!Number.isFinite(base)) return null
+  const unit = (m[2] ?? '').toUpperCase()
+  const mul = unit === 'K' ? 1e3 : unit === 'M' ? 1e6 : unit === 'B' ? 1e9 : 1
+  return Math.round(base * mul)
 }
 
-let sessionHitObserver: MutationObserver | null = null
+/**
+ * 由本会话的「输入 tok 总量」与官方取整命中率反解两位小数命中率。
+ * 官方 P 是四舍五入整数，真实值落在 [P-0.5, P+0.5)；用该区间与 tok
+ * 量化格（1/N）交集的中值作为估计，保证两位小数有有效数字。
+ */
+function refineHitRate(promptTok: number, officialPct: number): string | null {
+  if (promptTok <= 0 || officialPct < 0 || officialPct > 100) return null
+  const lo = Math.max(0, officialPct - 0.5)
+  const hi = Math.min(100, officialPct + 0.5)
+  // cacheRead 的可行整数范围（受 tok 量化限制）。
+  const readLo = Math.ceil((lo / 100) * promptTok)
+  const readHi = Math.floor((hi / 100) * promptTok)
+  if (readHi < readLo) return null
+  const readMid = Math.round((readLo + readHi) / 2)
+  let pct = (readMid / promptTok) * 100
+  // 约束 1：不得为 xx.00 —— 落在整数时朝区间内侧挪一个量化格。
+  if (Math.abs(pct - Math.round(pct)) < 0.005) {
+    const stepUp = readMid + 1 <= readHi ? readMid + 1 : readMid - 1 >= readLo ? readMid - 1 : null
+    if (stepUp !== null) pct = (stepUp / promptTok) * 100
+  }
+  if (pct <= 0 || pct > 100) return null
+  return pct.toFixed(2)
+}
 
-/** 官方 React 会不断重建统计行文本节点，把注入刷回官方值。
- *  用 MutationObserver 在文本被改回时立即重打（0 防抖，去重避免死循环）。 */
-function ensureHitRepatch(): void {
-  if (sessionHitObserver !== null) return
+let hitObserver: MutationObserver | null = null
+
+/** 观察统计行，官方重渲染后立即重算重打（去重，避免死循环）。 */
+function ensureHitObserver(): void {
+  if (hitObserver !== null) return
   let queued = false
   const flush = (): void => { queued = false; patchCacheHitText(document.body) }
-  sessionHitObserver = new MutationObserver(() => {
+  hitObserver = new MutationObserver(() => {
     if (queued) return
     queued = true
     queueMicrotask(flush)
   })
-  sessionHitObserver.observe(document.body, { childList: true, subtree: true, characterData: true })
-}
-
-function ensureSessionHitPolling(): void {
-  if (sessionHitTimer !== null) return
-  void refreshSessionHit()
-  ensureHitRepatch()
-  sessionHitTimer = window.setInterval(() => { void refreshSessionHit() }, 5000)
-}
-
-/** 在 items 中找与面板标题唯一匹配的会话命中率；匹配不到返回 null（保留官方原样）。 */
-function matchSessionHit(title: string): string | null {
-  const t1 = title.trim()
-  if (t1 === '' || sessionHitItems.length === 0) return null
-  let found: string | null = null
-  for (const item of sessionHitItems) {
-    if (item.title === '' || item.hit === null) continue
-    if (t1.includes(item.title) || item.title.includes(t1)) {
-      if (found !== null) return null // 非唯一，放弃
-      found = item.hit
-    }
-  }
-  return found
+  hitObserver.observe(document.body, { childList: true, subtree: true, characterData: true })
 }
 
 function patchCacheHitText(root: ParentNode): void {
-  const pattern = /(缓存命中\s*)(\d+(?:\.\d+)?)%/u
-  // 每个 composer dock 统计行属于一个会话面板（[data-slot="conversation"]）。
-  // 用面板标题与 host 下发的每会话 titles 精确配对，只替换本会话自己的
-  // 两位小数命中率；配不上就保留官方原样，绝不拿别的会话/总体值顶替。
   let docks: Element[] = []
   try { docks = Array.from(root.querySelectorAll('[data-slot="conversation.composer.dock"]')) } catch { return }
   for (const dock of docks) {
-    let pane: Element | null = dock.parentElement
-    while (pane !== null && pane.getAttribute('data-slot') !== 'conversation') pane = pane.parentElement
-    let panelTitle = ''
-    if (pane !== null) {
-      const header = pane.querySelector('[data-slot="conversation.session.header"]')
-      panelTitle = (header?.textContent ?? '').trim()
-    }
-    const hit = matchSessionHit(panelTitle)
-    if (hit === null) continue
+    const line = (dock.textContent ?? '')
+    // 官方同一行：「缓存命中 P%」与「输入 N tok · 输出 M tok」。
+    const hitM = /缓存命中\s*([\d.]+)%/.exec(line)
+    const tokM = /输入\s*([\d.]+\s*[KMB]?)\s*tok/i.exec(line)
+    if (hitM === null || tokM === null) continue
+    const officialPct = Number(hitM[1])
+    const promptTok = parseTokText(tokM[1])
+    if (!Number.isFinite(officialPct) || promptTok === null) continue
+    const refined = refineHitRate(promptTok, officialPct)
+    if (refined === null || refined === hitM[1]) continue
+    // 只改命中率那一个文本节点。
     const walker = document.createTreeWalker(dock, NodeFilter.SHOW_TEXT)
-    const nodes: Text[] = []
-    while (walker.nextNode()) nodes.push(walker.currentNode as Text)
-    for (const node of nodes) {
+    while (walker.nextNode()) {
+      const node = walker.currentNode as Text
       const value = node.nodeValue
-      if (value === null || !pattern.test(value)) continue
-      node.nodeValue = value.replace(pattern, (_m, prefix: string) => `${prefix}${hit}%`)
+      if (value === null) continue
+      const local = /(缓存命中\s*)([\d.]+)(%)/.exec(value)
+      if (local === null) continue
+      if (local[2] === refined) break
+      node.nodeValue = value.replace(/(缓存命中\s*)([\d.]+)(%)/, `$1${refined}$3`)
+      break
     }
   }
 }
@@ -174,7 +187,7 @@ export function applyVentusPrefs(): () => void {
 
   const apply = (): void => {
     if (current.cacheHit2Decimals) {
-      ensureSessionHitPolling()
+      ensureHitObserver()
       patchCacheHitText(document.body)
     }
     applyFluidWidth(current.fluidConversationWidth)
