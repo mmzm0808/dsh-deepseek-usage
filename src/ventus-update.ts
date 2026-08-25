@@ -23,19 +23,20 @@ import { fileURLToPath } from 'node:url'
 const VENTUS_REPO = 'mmzm0808/dsh-ventus-plugins'
 const VENTUS_REPO_URL = `https://github.com/${VENTUS_REPO}.git`
 
-/** 子插件展示元数据（与整合包 build-client.mjs 的 CLIENT_ENTRIES 对齐）。 */
-const SUB_PLUGINS: Array<{ id: string; name: string; category: string; entry: string }> = [
-  { id: 'dsh-better-sidebar', name: '右侧重栏', category: '侧边栏', entry: 'dsh-better-sidebar/lib/client.js' },
-  { id: 'dsh-deepseek-usage', name: '用量监测', category: '用量', entry: 'dsh-deepseek-usage/lib/client.js' },
-  { id: 'dsh-theme-endfield', name: '终末地主题', category: '主题', entry: 'dsh-theme-endfield/client.js' },
-  { id: 'dsh-ventus-progress', name: '子代理进度', category: '进度', entry: 'dsh-ventus-progress/lib/client.js' },
-  { id: 'dsh-ventus-search', name: '多引擎搜索', category: '搜索', entry: 'dsh-ventus-search/lib/client.js' },
-  { id: 'dsh-ventus-whale', name: '虎鲸桌宠', category: '桌宠', entry: 'dsh-ventus-whale/lib/client.js' },
-  { id: '@dsh-external/dsh-super-injector', name: '模组注入', category: '工具链', entry: '@dsh-external/dsh-super-injector/lib/client.js' },
-  { id: '@dsh-external/dsh-visualize', name: '可视化', category: '工具链', entry: '@dsh-external/dsh-visualize/lib/client.js' },
-  { id: '@dsh-external/dsh-webui', name: 'WebUI 工具链', category: '工具链', entry: '@dsh-external/dsh-webui/lib/client.js' },
-  { id: '@nanmicoder/dsh-auto-mode', name: 'Auto 权限', category: '权限', entry: '@nanmicoder/dsh-auto-mode/lib/client.js' },
-  { id: 'dsh-usage-skill', name: '用量热力图', category: '用量', entry: 'dsh-usage-skill/lib/client.js' },
+/** 子插件展示元数据（与整合包 build-client.mjs 的 CLIENT_ENTRIES 对齐）。
+ *  requires：依赖的其他子插件 id；勾选本项时弹窗自动连带勾选并提示「将一并安装」。 */
+const SUB_PLUGINS: Array<{ id: string; name: string; category: string; entry: string; requires: string[] }> = [
+  { id: 'dsh-better-sidebar', name: '右侧重栏', category: '侧边栏', entry: 'dsh-better-sidebar/lib/client.js', requires: [] },
+  { id: 'dsh-deepseek-usage', name: '用量监测', category: '用量', entry: 'dsh-deepseek-usage/lib/client.js', requires: [] },
+  { id: 'dsh-theme-endfield', name: '终末地主题', category: '主题', entry: 'dsh-theme-endfield/client.js', requires: [] },
+  { id: 'dsh-ventus-progress', name: '子代理进度', category: '进度', entry: 'dsh-ventus-progress/lib/client.js', requires: [] },
+  { id: 'dsh-ventus-search', name: '多引擎搜索', category: '搜索', entry: 'dsh-ventus-search/lib/client.js', requires: [] },
+  { id: 'dsh-ventus-whale', name: '虎鲸桌宠', category: '桌宠', entry: 'dsh-ventus-whale/lib/client.js', requires: [] },
+  { id: '@dsh-external/dsh-super-injector', name: '模组注入', category: '工具链', entry: '@dsh-external/dsh-super-injector/lib/client.js', requires: [] },
+  { id: '@dsh-external/dsh-visualize', name: '可视化', category: '工具链', entry: '@dsh-external/dsh-visualize/lib/client.js', requires: [] },
+  { id: '@dsh-external/dsh-webui', name: 'WebUI 工具链', category: '工具链', entry: '@dsh-external/dsh-webui/lib/client.js', requires: [] },
+  { id: '@nanmicoder/dsh-auto-mode', name: 'Auto 权限', category: '权限', entry: '@nanmicoder/dsh-auto-mode/lib/client.js', requires: [] },
+  { id: 'dsh-usage-skill', name: '用量热力图', category: '用量', entry: 'dsh-usage-skill/lib/client.js', requires: [] },
 ]
 
 export interface VentusPluginItem {
@@ -44,6 +45,8 @@ export interface VentusPluginItem {
   category: string
   /** 本机 vendor 是否有该子插件产物（client 入口存在即视为已安装）。 */
   installed: boolean
+  /** 依赖的其他子插件 id（勾选本项时自动连带勾选，取消时提示）。 */
+  requires: string[]
 }
 
 export interface VentusUpdateList {
@@ -97,11 +100,12 @@ export async function fetchRemoteCommit(): Promise<{ sha: string; message: strin
 
 /** 本机已装子插件清单。 */
 function scanInstalled(root: string): VentusPluginItem[] {
-  return SUB_PLUGINS.map(({ id, name, category, entry }) => ({
+  return SUB_PLUGINS.map(({ id, name, category, entry, requires }) => ({
     id,
     name,
     category,
     installed: existsSync(join(root, 'vendor', entry)),
+    requires,
   }))
 }
 

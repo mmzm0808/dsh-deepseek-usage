@@ -18,6 +18,8 @@ export interface VentusPluginItem {
     category: string;
     /** 本机 vendor 是否有该子插件产物（client 入口存在即视为已安装）。 */
     installed: boolean;
+    /** 依赖的其他子插件 id（勾选本项时自动连带勾选，取消时提示）。 */
+    requires: string[];
 }
 export interface VentusUpdateList {
     ok: boolean;

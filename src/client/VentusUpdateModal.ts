@@ -19,6 +19,8 @@ interface VentusPluginItem {
   name: string
   category: string
   installed: boolean
+  /** 依赖的其他子插件 id（勾选时自动连带勾选）。 */
+  requires: string[]
 }
 
 interface ListPayload {
@@ -139,6 +141,12 @@ const itemCatStyle: Record<string, string> = {
   color: 'var(--dsw-alias-label-tertiary, #6b7484)',
 }
 
+/** 依赖提示行（勾选本项将一并安装的依赖）。 */
+const itemDepStyle: Record<string, string> = {
+  fontSize: '11px',
+  color: 'var(--edge-accent, #e8b34b)',
+}
+
 const badgeStyle: Record<string, string> = {
   marginLeft: 'auto',
   fontSize: '11px',
@@ -222,8 +230,21 @@ export function VentusUpdateModal(props: { onClose: () => void }): unknown {
   const toggle = (id: string): void => {
     setChecked(prev => {
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+      const item = plugins.find(plugin => plugin.id === id)
+      if (next.has(id)) {
+        // 取消：若仍被其它已勾选项依赖，则不取消（依赖保持），仅在文案上提示。
+        const stillNeeded = item !== undefined
+          && plugins.some(p => p !== item && next.has(p.id) && p.requires.includes(id))
+        if (!stillNeeded) next.delete(id)
+      } else {
+        next.add(id)
+        // 勾选：自动连带勾选其 requires 依赖，实现「将一并安装」。
+        if (item !== undefined) {
+          for (const dep of item.requires) {
+            if (plugins.some(p => p.id === dep)) next.add(dep)
+          }
+        }
+      }
       return next
     })
   }
@@ -310,6 +331,9 @@ export function VentusUpdateModal(props: { onClose: () => void }): unknown {
           ),
           plugins.map(item => {
             const badge = statusBadge(item, localSha, remoteSha)
+            const depNames = item.requires
+              .map(dep => plugins.find(p => p.id === dep)?.name ?? dep)
+              .join('、')
             return createElement('label', { key: item.id, style: itemStyle },
               createElement('input', {
                 type: 'checkbox',
@@ -320,6 +344,8 @@ export function VentusUpdateModal(props: { onClose: () => void }): unknown {
               createElement('span', { style: { display: 'flex', flexDirection: 'column', gap: '2px' } },
                 createElement('span', { style: itemNameStyle }, item.name),
                 createElement('span', { style: itemCatStyle }, item.category),
+                depNames !== '' && createElement('span', { style: itemDepStyle },
+                  `依赖 ${depNames}，勾选将一并安装`),
               ),
               createElement('span', { style: { ...badgeStyle, color: badge.color } }, badge.text),
             )
