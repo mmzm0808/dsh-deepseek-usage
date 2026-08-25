@@ -14,7 +14,7 @@
  */
 
 import { spawnSync } from 'node:child_process'
-import { cpSync, existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -38,7 +38,7 @@ const SUB_PLUGINS: Array<{ id: string; name: string; category: string; entry: st
   { id: '@nanmicoder/dsh-auto-mode', name: 'Auto 权限', category: '权限', entry: '@nanmicoder/dsh-auto-mode/lib/client.js', requires: [] },
   { id: 'dsh-usage-skill', name: '用量热力图', category: '用量', entry: 'dsh-usage-skill/lib/client.js', requires: [] },
   // 科研工作流插件（host-only，无 client bundle；entry 用 host 产物判断安装状态）。
-  { id: 'dsh-ventus-bench', name: '科研工作流', category: '科研', entry: 'dsh-ventus-bench/lib/index.js', requires: [] },
+  { id: 'dsh-ventus-research', name: '科研工作流', category: '科研', entry: 'dsh-ventus-research/lib/index.js', requires: [] },
 ]
 
 export interface VentusPluginItem {
@@ -57,6 +57,10 @@ export interface VentusUpdateList {
   bundled: boolean
   /** 远程最新提交；GitHub 不可达时为 null（列表仍可用，但无法执行更新）。 */
   remote: { sha: string; message: string } | null
+  /** 本地整合包版本号（package.json version）。 */
+  localVersion: string | null
+  /** 远程最新版本号（GitHub package.json version）。 */
+  remoteVersion: string | null
   plugins: VentusPluginItem[]
   error?: string
 }
@@ -95,6 +99,30 @@ export async function fetchRemoteCommit(): Promise<{ sha: string; message: strin
     if (sha === '') return null
     const message = typeof top?.commit?.message === 'string' ? top.commit.message.split('\n')[0] : ''
     return { sha, message }
+  } catch {
+    return null
+  }
+}
+
+/** 读本地整合包版本号（<root>/package.json 的 version；读不到返回 null）。 */
+export function readLocalVersion(root: string): string | null {
+  try {
+    const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as { version?: unknown }
+    return typeof pkg.version === 'string' && pkg.version !== '' ? pkg.version : null
+  } catch {
+    return null
+  }
+}
+
+/** 查询 GitHub 远程最新版本号（raw package.json 的 version；不可达返回 null）。 */
+export async function fetchRemoteVersion(): Promise<string | null> {
+  try {
+    const res = await fetch(`https://raw.githubusercontent.com/${VENTUS_REPO}/master/package.json`, {
+      signal: AbortSignal.timeout(15_000),
+    })
+    if (!res.ok) return null
+    const pkg = (await res.json()) as { version?: unknown }
+    return typeof pkg.version === 'string' && pkg.version !== '' ? pkg.version : null
   } catch {
     return null
   }
@@ -192,9 +220,12 @@ export async function getVentusUpdateList(): Promise<VentusUpdateList> {
       ok: true,
       bundled: false,
       remote: null,
+      localVersion: null,
+      remoteVersion: null,
       plugins: [],
       error: '未检测到整合包安装（独立安装的 dsh-deepseek-usage 无此功能）',
     }
   }
-  return { ok: true, bundled: true, remote: await fetchRemoteCommit(), plugins: scanInstalled(root) }
+  const [remote, remoteVersion] = await Promise.all([fetchRemoteCommit(), fetchRemoteVersion()])
+  return { ok: true, bundled: true, remote, localVersion: readLocalVersion(root), remoteVersion, plugins: scanInstalled(root) }
 }

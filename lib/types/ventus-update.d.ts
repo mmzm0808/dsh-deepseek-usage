@@ -30,6 +30,10 @@ export interface VentusUpdateList {
         sha: string;
         message: string;
     } | null;
+    /** 本地整合包版本号（package.json version）。 */
+    localVersion: string | null;
+    /** 远程最新版本号（GitHub package.json version）。 */
+    remoteVersion: string | null;
     plugins: VentusPluginItem[];
     error?: string;
 }
@@ -49,6 +53,10 @@ export declare function fetchRemoteCommit(): Promise<{
     sha: string;
     message: string;
 } | null>;
+/** 读本地整合包版本号（<root>/package.json 的 version；读不到返回 null）。 */
+export declare function readLocalVersion(root: string): string | null;
+/** 查询 GitHub 远程最新版本号（raw package.json 的 version；不可达返回 null）。 */
+export declare function fetchRemoteVersion(): Promise<string | null>;
 /**
  * 选择性更新：clone 远程整合包 → 覆盖勾选子插件产物 → 重建聚合 bundle。
  * @param selected - 本次要更新/安装的子插件 id 列表（空数组即只重建）。

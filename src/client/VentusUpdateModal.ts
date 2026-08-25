@@ -27,6 +27,8 @@ interface ListPayload {
   ok?: boolean
   bundled?: boolean
   remote?: { sha: string; message: string } | null
+  localVersion?: string | null
+  remoteVersion?: string | null
   plugins?: VentusPluginItem[]
   error?: string
 }
@@ -40,19 +42,17 @@ interface ApplyResult {
   error?: string
 }
 
-/** 本地安装版本 sha（构建时由 bundle stamp 写入）。 */
+/** 本地构建 sha（Badge 的 sha 兜底用；更新成功后写入）。 */
 const LOCAL_SHA_KEY = 'dsh.ventus.localSha'
 
-function readLocalSha(): string | null {
-  try {
-    const v = window.localStorage.getItem(LOCAL_SHA_KEY)
-    return typeof v === 'string' && v.length >= 7 ? v : null
-  } catch { return null }
+/** 本地整合包版本与远程不一致 = 有更新。 */
+function hasUpdate(localVersion: string | null, remoteVersion: string | null): boolean {
+  return localVersion !== null && remoteVersion !== null && localVersion !== remoteVersion
 }
 
-/** 已安装 + 本地版本与远程不一致 = 可更新。 */
-function isUpdateable(item: VentusPluginItem, localSha: string | null, remoteSha: string | null): boolean {
-  return item.installed && localSha !== null && remoteSha !== null && localSha !== remoteSha
+/** 已安装 + 整合包有更新 = 该项可更新。 */
+function isUpdateable(item: VentusPluginItem, localVersion: string | null, remoteVersion: string | null): boolean {
+  return item.installed && hasUpdate(localVersion, remoteVersion)
 }
 
 const overlayStyle: Record<string, string> = {
@@ -155,9 +155,9 @@ const badgeStyle: Record<string, string> = {
   whiteSpace: 'nowrap',
 }
 
-function statusBadge(item: VentusPluginItem, localSha: string | null, remoteSha: string | null): { text: string; color: string } {
+function statusBadge(item: VentusPluginItem, localVersion: string | null, remoteVersion: string | null): { text: string; color: string } {
   if (!item.installed) return { text: '未安装', color: 'var(--dsw-alias-label-tertiary, #6b7484)' }
-  if (isUpdateable(item, localSha, remoteSha)) return { text: '可更新', color: 'var(--edge-accent, #e8b34b)' }
+  if (isUpdateable(item, localVersion, remoteVersion)) return { text: '可更新', color: 'var(--edge-accent, #e8b34b)' }
   return { text: '已安装', color: 'var(--dsw-alias-state-success, #4caf7d)' }
 }
 
@@ -204,8 +204,8 @@ export function VentusUpdateModal(props: { onClose: () => void }): unknown {
   const [result, setResult] = useState<ApplyResult | null>(null)
   const [errorText, setErrorText] = useState('')
 
-  const localSha = readLocalSha()
-  const remoteSha = list?.remote?.sha ?? null
+  const localVersion = list?.localVersion ?? null
+  const remoteVersion = list?.remoteVersion ?? null
   const plugins = list?.plugins ?? []
   const isBundled = list?.bundled !== false
 
@@ -310,14 +310,14 @@ export function VentusUpdateModal(props: { onClose: () => void }): unknown {
         ready && list?.bundled === false && createElement('div', { style: remoteLineStyle },
           '独立安装的 dsh-deepseek-usage 无整合包更新功能，请安装 dsh-ventus-plugins 整合包。'),
 
-        ready && isBundled && remoteSha === null &&
+        ready && isBundled && remoteVersion === null &&
           createElement('div', { style: remoteLineStyle },
             '无法连接 GitHub（远程版本未知）。仍可勾选已列出的插件尝试更新，执行时可能失败。'),
 
-        ready && isBundled && remoteSha !== null && list?.remote != null &&
+        ready && isBundled && remoteVersion !== null &&
           createElement('div', { style: remoteLineStyle },
-            createElement('div', null, `远程最新：${list.remote.sha.slice(0, 7)}${localSha === null ? '' : `（本地 ${localSha.slice(0, 7)}${localSha !== list.remote.sha ? '，有更新' : '，已是最新'}）`}`),
-            list.remote.message !== '' && createElement('div', null, list.remote.message),
+            createElement('div', null, `远程最新 v${remoteVersion}${localVersion === null ? '' : `（本地 v${localVersion}${localVersion !== remoteVersion ? '，有更新' : '，已是最新'}）`}`),
+            (list?.remote?.message ?? '') !== '' && createElement('div', null, list?.remote?.message),
           ),
 
         ready && plugins.length > 0 && createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px' } },
@@ -330,7 +330,7 @@ export function VentusUpdateModal(props: { onClose: () => void }): unknown {
             createElement('span', { style: itemNameStyle }, '全选 / 取消全选'),
           ),
           plugins.map(item => {
-            const badge = statusBadge(item, localSha, remoteSha)
+            const badge = statusBadge(item, localVersion, remoteVersion)
             const depNames = item.requires
               .map(dep => plugins.find(p => p.id === dep)?.name ?? dep)
               .join('、')
