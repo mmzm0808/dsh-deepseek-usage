@@ -37,6 +37,8 @@ const SUB_PLUGINS: Array<{ id: string; name: string; category: string; entry: st
   { id: '@dsh-external/dsh-webui', name: 'WebUI 工具链', category: '工具链', entry: '@dsh-external/dsh-webui/lib/client.js', requires: [] },
   { id: '@nanmicoder/dsh-auto-mode', name: 'Auto 权限', category: '权限', entry: '@nanmicoder/dsh-auto-mode/lib/client.js', requires: [] },
   { id: 'dsh-usage-skill', name: '用量热力图', category: '用量', entry: 'dsh-usage-skill/lib/client.js', requires: [] },
+    // 文档解析（MinerU：PDF/扫描件解析）。
+  { id: '@huanlin/dsh-plugin-mineru', name: '文档解析', category: '工具链', entry: '@huanlin/dsh-plugin-mineru/lib/client.js', requires: [] },
   // 上下文洞察（context dashboard + /context 命令，bowenliang123/dsh-context）。
   { id: 'dsh-context', name: '上下文洞察', category: '上下文', entry: 'dsh-context/lib/client.js', requires: [] },
   // 科研工作流插件（host-only，无 client bundle；entry 用 host 产物判断安装状态）。
