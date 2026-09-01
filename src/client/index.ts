@@ -138,6 +138,13 @@ function compact(value: number): string {
   return String(value)
 }
 
+/** 命中率百分比去尾零：整数显示整数(100 → "100")，非整数保留真实小数
+ *  (94.96 → "94.96"，94.90 → "94.9")。禁止裸 toFixed(2)——它在真值恰为整数
+ *  时产出 "100.00"/"0.00" 伪精度。所有命中率文案必须走这。 */
+function fmtPct(value: number): string {
+  return value.toFixed(2).replace(/\.?0+$/, '')
+}
+
 /** Format money with the snapshot currency. */
 function money(value: number, currency: string): string {
   return currency === 'USD' ? `$${value.toFixed(2)}` : `¥${value.toFixed(2)}`
@@ -474,7 +481,7 @@ export function apply(ctx: ClientContext): void {
       </div>
       <div class="${NS}-body">
         <div class="${NS}-page active" data-page="overview">
-        <section>
+        <section style="display:none" aria-hidden="true">
           <div class="${NS}-section-title">账户</div>
           <div class="${NS}-balance">
             <div class="${NS}-balance-top">
@@ -830,8 +837,8 @@ export function apply(ctx: ClientContext): void {
     const hitInput = todayModel ? todayModel.cacheHitTokens + todayModel.cacheMissTokens : 0
     if (todayModel !== undefined && hitInput > 0) {
       const hitPct = todayModel.cacheHitTokens / hitInput * 100
-      stateFields.hitRate.textContent = `命中率 ${hitPct.toFixed(2)}%`
-      stateFields.hitRate.dataset.tip = `今日输入缓存命中 ${compact(todayModel.cacheHitTokens)} / ${compact(hitInput)}（${hitPct.toFixed(2)}%）`
+      stateFields.hitRate.textContent = `命中率 ${fmtPct(hitPct)}%`
+      stateFields.hitRate.dataset.tip = `今日输入缓存命中 ${compact(todayModel.cacheHitTokens)} / ${compact(hitInput)}（${fmtPct(hitPct)}%）`
       setRealHitRate(hitPct)
     } else {
       stateFields.hitRate.textContent = '命中率 --'
@@ -1212,7 +1219,7 @@ export function apply(ctx: ClientContext): void {
           data-output="${point.outputTokens}"
           data-cache-read="${point.cacheReadTokens}"
           data-cache-write="${point.cacheWriteTokens}"
-          data-hit-rate="${pointHitRate(point).toFixed(1)}"/>
+          data-hit-rate="${fmtPct(pointHitRate(point))}"/>
       `).join('')
       return { lineColor, area, line, circles }
     })
@@ -1261,7 +1268,7 @@ export function apply(ctx: ClientContext): void {
             <span class="${NS}-chart-title">${escapeHtml(model)}</span>
             ${legend}
           </span>
-          <span class="${NS}-chart-total">${compact(total)} Tokens · 命中率 ${totalHitRate.toFixed(1)}%</span>
+          <span class="${NS}-chart-total">${compact(total)} Tokens · 命中率 ${fmtPct(totalHitRate)}%</span>
         </div>
         <svg class="${NS}-chart-svg" viewBox="0 0 ${width} ${height}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${escapeHtml(model)} 用量趋势">
           ${gridLines}
@@ -1308,7 +1315,7 @@ export function apply(ctx: ClientContext): void {
           <div>输出 ${compact(output)}</div>
           <div>缓存命中 ${compact(cacheRead)}</div>
           <div>缓存未命中 ${compact(cacheWrite)}</div>
-          <div>命中率 ${hitRate.toFixed(1)}%</div>
+          <div>命中率 ${fmtPct(hitRate)}%</div>
         </div>
       `
     }).join('')

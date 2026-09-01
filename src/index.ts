@@ -294,6 +294,11 @@ export function apply(ctx: AppContext, config: Config): void {
   }
 
 
+  /** 命中率百分比去尾零格式化：整数显示整数(96 → "96")，非整数保留真实小数
+   *  (94.96 → "94.96"，94.90 → "94.9")。弃用裸 toFixed(2)——它在真值恰为整数时
+   *  产出 "96.00" 伪精度；toFixed 后去尾零则保留真实有效位。 */
+  const fmtHit = (pct: number): string => pct.toFixed(2).replace(/\.?0+$/, '')
+
   /** 每个活跃会话命中率 = cacheRead / (input + cacheRead + cacheWrite)，两位小数；
    *  latest 取事件时间最新的会话（通常即当前打开的会话）的值。 */
   const getSessionHits = (): { items: Array<{ id: string; title: string; hit: string | null; promptTok: number; officialPct: number | null }>; latest: string | null } => {
@@ -315,7 +320,9 @@ export function apply(ctx: AppContext, config: Config): void {
         if (typeof (ev as { time?: number })?.time === 'number' && (ev.time as number) > lastTime) lastTime = ev.time as number
       }
       const denom = input + read + write
-      const hit = denom > 0 ? ((read / denom) * 100).toFixed(2) : null
+      // 命中率去尾零：真值是整数(如恰好 96%)时显示 "96" 而非伪精度的 "96.00"；
+      // 非整数保留真实小数(如 "94.96")。避免 toFixed(2) 造出 xx.00 假精度。
+      const hit = denom > 0 ? fmtHit((read / denom) * 100) : null
       // 标题：会话 log 中的 session/title 事件（官方命名/自动命名落库的
       // 标题，与客户端 header 显示的是同一来源）；缺失时回退首条用户文本。
       let ttl = ''
